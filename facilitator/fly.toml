@@ -1,0 +1,40 @@
+app = "ledgerforge-facilitator"
+primary_region = "sin"
+
+[build]
+
+[env]
+  FACILITATOR_PORT     = "3001"
+  MANTLE_RPC           = "https://rpc.mantle.xyz"
+  OPERATOR_ADDRESS     = "0xC0296012Cfbb0e6DF5dA7158B65Dbc46DD9650e0"
+  SKILL_REGISTRY_ADDRESS = "0x37041F257Bf8f1E201497Dc0BCDa1ae0d8317992"
+  X402_ESCROW_ADDRESS  = "0x1d550b555B3a2e124ef611b55965848d6be233a2"
+  ERC8004_REPUTATION_REGISTRY = "0x8004BAa17C55a88189AE136b182e5fdA19dE9b63"
+  ERC8004_IDENTITY_REGISTRY   = "0x8004A169FB4a3325136EB29fA0ceB6D2e539a432"
+  USDE_ADDRESS         = "0x5d3a1Ff2b6BAb83b63cd9AD0787074081a52ef34"
+  USDC_ADDRESS         = "0x09Bc4E0D864854c6aFB6eB9A9cdF58aC190D0dF9"
+  FACILITATOR_FEE_BPS  = "20"
+  FACILITATOR_MIN_AMOUNT = "100"
+
+[[services]]
+  internal_port = 3001
+  protocol      = "tcp"
+
+  [[services.ports]]
+    port     = 80
+    handlers = ["http"]
+
+  [[services.ports]]
+    port     = 443
+    handlers = ["tls", "http"]
+
+  [[services.http_checks]]
+    interval     = 30000
+    timeout      = 5000
+    grace_period = "10s"
+    method       = "GET"
+    path         = "/health"
+
+[[vm]]
+  size   = "shared-cpu-1x"
+  memory = "256mb"

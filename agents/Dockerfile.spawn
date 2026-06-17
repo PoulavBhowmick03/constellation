@@ -1,0 +1,11 @@
+FROM node:20-alpine
+WORKDIR /app
+# Native module build deps (better-sqlite3 has no musl prebuilt binaries)
+RUN apk add --no-cache python3 make g++ libc6-compat
+COPY package*.json ./
+RUN npm ci
+COPY tsconfig.json ./
+COPY src ./src
+ENV SPAWN_AGENT_PORT=3003
+EXPOSE 3003
+CMD ["node_modules/.bin/tsx", "src/spawn-skills.ts", "--serve"]

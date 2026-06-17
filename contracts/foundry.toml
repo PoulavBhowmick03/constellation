@@ -1,0 +1,13 @@
+[profile.default]
+src = "src"
+out = "out"
+libs = ["lib"]
+solc_version = "0.8.20"
+optimizer = true
+optimizer_runs = 200
+
+[profile.integration]
+eth_rpc_url = "https://rpc.mantle.xyz"
+
+[etherscan]
+mantle = { key = "${MANTLESCAN_API_KEY}", url = "https://api.mantlescan.xyz/api", chain = 5000 }
