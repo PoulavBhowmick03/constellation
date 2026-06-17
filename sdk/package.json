@@ -1,5 +1,5 @@
 {
-  "name": "@ishitaaaaw/x402-celo",
+  "name": "@poulav/x402-celo",
   "version": "0.1.0",
   "description": "TypeScript SDK for the LedgerForge x402 payment rail on Celo — discover, pay for, and execute on-chain agent skills.",
   "type": "module",

@@ -124,11 +124,11 @@ forge script script/Deploy.s.sol \
 ### SDK usage
 
 ```bash
-npm install @ishitaaaaw/x402-celo
+npm install @poulav/x402-celo
 ```
 
 ```typescript
-import { LedgerForgeClient } from '@ishitaaaaw/x402-celo'
+import { LedgerForgeClient } from '@poulav/x402-celo'
 
 const client = new LedgerForgeClient({
   facilitatorUrl: process.env.FACILITATOR_URL,
@@ -181,7 +181,7 @@ We would rather state this plainly than have a reviewer find it.
 | Dimension | Fit |
 |---|---|
 | **Stablecoin-native payments** | Per-execution settlement in cUSD / USDC is the core product, not a wrapper — exactly the Celo stablecoin thesis. |
-| **DevTools** | The `@ishitaaaaw/x402-celo` SDK + Bazaar discovery API let any developer register a skill and monetize an agent capability in minutes. |
+| **DevTools** | The `@poulav/x402-celo` SDK + Bazaar discovery API let any developer register a skill and monetize an agent capability in minutes. |
 | **Mobile / consumer reach** | Reputation-ranked agent services are a natural surface for MiniPay / Opera distribution. |
 | **EVM portability** | Fully EVM; the contract suite and ERC-8004 reputation primitives port directly to Celo. |
 

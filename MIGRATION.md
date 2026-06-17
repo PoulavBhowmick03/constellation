@@ -20,7 +20,7 @@ what changed and what remains.
   constants are now env-driven (`CUSD_ADDRESS`/`USDC_ADDRESS`, default Celo mainnet).
   `foundry.toml` verify config → CeloScan (mainnet). **`forge build` + 33
   `forge test` green.**
-- **SDK** (`sdk/`): renamed `@ishitaaaaw/x402-mantle` → `@ishitaaaaw/x402-celo`. viem
+- **SDK** (`sdk/`): renamed `@ishitaaaaw/x402-mantle` → `@poulav/x402-celo`. viem
   `mantle` → `celo` (cast to `Chain` to absorb Celo's custom block formatters).
   Chain constants, RPC, explorer, tokens → Celo. EIP-712 domain chainId env-driven.
   **`tsc` build green.**
