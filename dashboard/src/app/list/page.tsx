@@ -6,7 +6,7 @@ import TierBadge from '@/components/TierBadge'
 import SkillCard from '@/components/SkillCard'
 import AddressChip from '@/components/AddressChip'
 
-const CELO_CHAIN_ID = '0xaef3'
+const CELO_CHAIN_ID = '0xa4ec'
 const OPERATOR = '0xC0296012Cfbb0e6DF5dA7158B65Dbc46DD9650e0'
 const SKILL_REGISTRY = '0x37041F257Bf8f1E201497Dc0BCDa1ae0d8317992'
 
@@ -78,7 +78,7 @@ export default function ListPage() {
         if ((sw as { code?: number }).code === 4902) {
           await window.ethereum.request({
             method: 'wallet_addEthereumChain',
-            params: [{ chainId: CELO_CHAIN_ID, chainName: 'Celo Alfajores', nativeCurrency: { name: 'CELO', symbol: 'CELO', decimals: 18 }, rpcUrls: ['https://alfajores-forno.celo-testnet.org'], blockExplorerUrls: ['https://alfajores.celoscan.io'] }],
+            params: [{ chainId: CELO_CHAIN_ID, chainName: 'Celo', nativeCurrency: { name: 'CELO', symbol: 'CELO', decimals: 18 }, rpcUrls: ['https://forno.celo.org'], blockExplorerUrls: ['https://celoscan.io'] }],
           })
         }
       }

@@ -419,7 +419,7 @@ export default function SkillDetailPage() {
               )}
               {hasHistory && (
                 <div style={{ marginTop: 16, fontFamily: 'var(--f-mono)', fontSize: 12, color: 'var(--lf-accent)' }}>
-                  {skill.jobs.toLocaleString()} on-chain reputation writes · <a href={`https://alfajores.celoscan.io/address/${CONTRACTS.SkillRegistry}`} target="_blank" rel="noopener noreferrer" style={{ color: 'var(--lf-accent)' }}>view on celoscan ↗</a>
+                  {skill.jobs.toLocaleString()} on-chain reputation writes · <a href={`https://celoscan.io/address/${CONTRACTS.SkillRegistry}`} target="_blank" rel="noopener noreferrer" style={{ color: 'var(--lf-accent)' }}>view on celoscan ↗</a>
                 </div>
               )}
             </section>
@@ -486,7 +486,7 @@ export default function SkillDetailPage() {
 
               <div style={{ marginTop: 16, paddingTop: 16, borderTop: '1px solid var(--lf-border)', fontSize: 12, color: 'var(--lf-ink-3)', display: 'flex', justifyContent: 'space-between' }}>
                 <span>View contract</span>
-                <a target="_blank" rel="noopener noreferrer" href={`https://alfajores.celoscan.io/address/${CONTRACTS.SkillRegistry}`} style={{ color: 'var(--lf-ink-2)' }}>
+                <a target="_blank" rel="noopener noreferrer" href={`https://celoscan.io/address/${CONTRACTS.SkillRegistry}`} style={{ color: 'var(--lf-ink-2)' }}>
                   celoscan ↗
                 </a>
               </div>

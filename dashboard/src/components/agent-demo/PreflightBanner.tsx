@@ -8,7 +8,7 @@ import {
   type Hex,
   type WalletClient,
 } from 'viem'
-import { celoAlfajores } from 'viem/chains'
+import { celo } from 'viem/chains'
 
 // Mantle mainnet constants
 const USDC_ADDRESS = '0x09Bc4E0D864854c6aFB6eB9A9cdF58aC190D0dF9' as const
@@ -79,7 +79,7 @@ export default function PreflightBanner({
   // walletClient to read.
   useEffect(() => {
     if (!account) return
-    const publicClient = createPublicClient({ chain: celoAlfajores, transport: http() })
+    const publicClient = createPublicClient({ chain: celo, transport: http() })
     setState((s) => ({ ...s, loading: true, error: undefined }))
     Promise.all([
       publicClient.readContract({
@@ -166,7 +166,7 @@ export default function PreflightBanner({
               setState((s) => ({ ...s, approving: true, error: undefined }))
               const txHash = await walletClient.writeContract({
                 account,
-                chain: celoAlfajores,
+                chain: celo,
                 address: USDC_ADDRESS,
                 abi: ERC20_ABI,
                 functionName: 'approve',

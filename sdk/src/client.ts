@@ -12,7 +12,7 @@ import {
   type WalletClient,
 } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
-import { celoAlfajores } from "viem/chains";
+import { celo } from "viem/chains";
 import {
   DEFAULTS,
   PAYMENT_DOMAIN_NAME,
@@ -39,7 +39,7 @@ import {
   explorerTxUrl,
 } from "./utils.js";
 
-const DEFAULT_EXPLORER = "https://alfajores.celoscan.io";
+const DEFAULT_EXPLORER = "https://celoscan.io";
 
 const ERC20_ABI = [
   {
@@ -106,13 +106,13 @@ export class LedgerForgeClient {
     } else if (this.#account) {
       this.#walletClient = createWalletClient({
         account: this.#account,
-        chain: celoAlfajores as Chain,
+        chain: celo as Chain,
         transport: http(this.rpcUrl),
       });
     }
 
     this.#publicClient = createPublicClient({
-      chain: celoAlfajores as Chain,
+      chain: celo as Chain,
       transport: http(this.rpcUrl),
     });
   }
@@ -370,7 +370,7 @@ export class LedgerForgeClient {
 
     const txHash = await walletClient.writeContract({
       account,
-      chain: celoAlfajores as Chain,
+      chain: celo as Chain,
       address: tokenAddress,
       abi: ERC20_ABI,
       functionName: "approve",

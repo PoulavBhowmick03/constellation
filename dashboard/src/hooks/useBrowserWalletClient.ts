@@ -1,7 +1,7 @@
 'use client'
 import { useEffect, useState } from 'react'
 import { createWalletClient, custom, type Address, type WalletClient } from 'viem'
-import { celoAlfajores } from 'viem/chains'
+import { celo } from 'viem/chains'
 
 /**
  * Builds a viem WalletClient from window.ethereum on demand. Returns null
@@ -25,7 +25,7 @@ export function useBrowserWalletClient(account: string | null): WalletClient | n
     const provider = window.ethereum as unknown as Parameters<typeof custom>[0]
     const wc = createWalletClient({
       account: account as Address,
-      chain: celoAlfajores,
+      chain: celo,
       transport: custom(provider),
     })
     setClient(wc)

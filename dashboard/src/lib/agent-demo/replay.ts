@@ -106,7 +106,7 @@ export async function* runReplay<T>(
       // Reputation tx hashes aren't in /jobs payload — accept undefined.
       skillRegistryRepTx: undefined,
       erc8004FeedbackTx: undefined,
-      explorerUrl: `https://alfajores.celoscan.io/tx/${job.completeJobTx || job.settlementTx}`,
+      explorerUrl: `https://celoscan.io/tx/${job.completeJobTx || job.settlementTx}`,
     }
     settlements.push(settlement)
     // Replay can't reconstruct the skill's raw output JSON since the indexer

@@ -2,12 +2,12 @@ import "dotenv/config";
 import { createPublicClient, createWalletClient, http } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 
-const CELO_RPC = process.env.CELO_RPC ?? "https://alfajores-forno.celo-testnet.org";
+const CELO_RPC = process.env.CELO_RPC ?? "https://forno.celo.org";
 
 export const celoChain = {
-  id: Number(process.env.CELO_CHAIN_ID ?? 44787),
-  name: "Celo Alfajores",
-  network: "celo-alfajores",
+  id: Number(process.env.CELO_CHAIN_ID ?? 42220),
+  name: "Celo",
+  network: "celo",
   nativeCurrency: { name: "CELO", symbol: "CELO", decimals: 18 },
   rpcUrls: {
     default: { http: [CELO_RPC] },
@@ -63,7 +63,7 @@ export const PROVIDER_ADDRESS =
    "") as `0x${string}`;
 
 export const ALLOWED_TOKENS = new Set([
-  // cUSD + USDC on Celo Alfajores
-  (process.env.CUSD_ADDRESS ?? "0x874069fa1eb16d44d622f2e0ca25eea172369bc1").toLowerCase(),
-  (process.env.USDC_ADDRESS ?? "0x2f25deb3848c207fc8e0c34035b3ba7fc157602b").toLowerCase(),
+  // cUSD + USDC on Celo
+  (process.env.CUSD_ADDRESS ?? "0x765DE816845861e75A25fCA122bb6898B8B1282a").toLowerCase(),
+  (process.env.USDC_ADDRESS ?? "0xcebA9300f2b948710d2653dD7B07f33A8B32118C").toLowerCase(),
 ]);

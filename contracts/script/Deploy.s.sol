@@ -7,10 +7,10 @@ import {x402Escrow} from "../src/x402Escrow.sol";
 import {BazaarListings} from "../src/BazaarListings.sol";
 
 contract Deploy is Script {
-    // Celo Alfajores stables; override via env for mainnet (Celo, 42220).
+    // Celo stables; override via env for mainnet (Celo, 42220).
     // cUSD is the primary listing-fee token (was USDe on Mantle).
-    address constant CUSD = 0x874069Fa1Eb16D44d622F2e0Ca25eeA172369bC1;
-    address constant USDC = 0x2F25deB3848C207fc8E0c34035B3Ba7fC157602B;
+    address constant CUSD = 0x765DE816845861e75A25fCA122bb6898B8B1282a;
+    address constant USDC = 0xcebA9300f2b948710d2653dD7B07f33A8B32118C;
 
     function run() external {
         address deployer = msg.sender;

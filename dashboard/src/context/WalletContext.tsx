@@ -10,7 +10,7 @@ declare global {
   }
 }
 
-const CELO_CHAIN_ID = '0xaef3'
+const CELO_CHAIN_ID = '0xa4ec'
 
 interface WalletContextType {
   account: string | null
@@ -50,10 +50,10 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
           await window.ethereum.request({
             method: 'wallet_addEthereumChain',
             params: [{
-              chainId: CELO_CHAIN_ID, chainName: 'Celo Alfajores',
+              chainId: CELO_CHAIN_ID, chainName: 'Celo',
               nativeCurrency: { name: 'CELO', symbol: 'CELO', decimals: 18 },
-              rpcUrls: ['https://alfajores-forno.celo-testnet.org'],
-              blockExplorerUrls: ['https://alfajores.celoscan.io'],
+              rpcUrls: ['https://forno.celo.org'],
+              blockExplorerUrls: ['https://celoscan.io'],
             }],
           })
         }

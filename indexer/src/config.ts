@@ -1,12 +1,12 @@
 import "dotenv/config";
 import { createPublicClient, http } from "viem";
 
-const CELO_RPC = process.env.CELO_RPC ?? "https://alfajores-forno.celo-testnet.org";
+const CELO_RPC = process.env.CELO_RPC ?? "https://forno.celo.org";
 
 export const celoChain = {
-  id: Number(process.env.CELO_CHAIN_ID ?? 44787),
-  name: "Celo Alfajores",
-  network: "celo-alfajores",
+  id: Number(process.env.CELO_CHAIN_ID ?? 42220),
+  name: "Celo",
+  network: "celo",
   nativeCurrency: { name: "CELO", symbol: "CELO", decimals: 18 },
   rpcUrls: {
     default: { http: [CELO_RPC] },

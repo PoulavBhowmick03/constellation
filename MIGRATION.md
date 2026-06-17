@@ -1,35 +1,35 @@
 # Migration: Mantle → Celo
 
 This repo is a fork of LedgerForge (Mantle build, `ledgerforge@34117fe`) ported to
-**Celo Alfajores testnet**. The original Mantle repo is untouched. This document tracks
+**Celo mainnet**. The original Mantle repo is untouched. This document tracks
 what changed and what remains.
 
 ## Target chain
 
-| | Mantle (origin) | Celo Alfajores (this repo) | Celo mainnet (later) |
+| | Mantle (origin) | Celo (this repo) | Celo mainnet (later) |
 |---|---|---|---|
-| chainId | 5000 | **44787** | 42220 |
-| RPC | rpc.mantle.xyz | alfajores-forno.celo-testnet.org | forno.celo.org |
-| Explorer | mantlescan.xyz | alfajores.celoscan.io | celoscan.io |
+| chainId | 5000 | **42220** | 42220 |
+| RPC | rpc.mantle.xyz | forno.celo.org | forno.celo.org |
+| Explorer | mantlescan.xyz | celoscan.io | celoscan.io |
 | Native | MNT | CELO | CELO |
 | Stable | USDe / USDC | cUSD / USDC | cUSD / USDC |
 
 ## Done ✅
 
 - **Contracts** (`contracts/`): pure-EVM Solidity ported as-is. `Deploy.s.sol` token
-  constants are now env-driven (`CUSD_ADDRESS`/`USDC_ADDRESS`, default Alfajores).
-  `foundry.toml` verify config → CeloScan (alfajores + mainnet). **`forge build` + 33
+  constants are now env-driven (`CUSD_ADDRESS`/`USDC_ADDRESS`, default Celo mainnet).
+  `foundry.toml` verify config → CeloScan (mainnet). **`forge build` + 33
   `forge test` green.**
 - **SDK** (`sdk/`): renamed `@ishitaaaaw/x402-mantle` → `@ishitaaaaw/x402-celo`. viem
-  `mantle` → `celoAlfajores` (cast to `Chain` to absorb Celo's custom block formatters).
+  `mantle` → `celo` (cast to `Chain` to absorb Celo's custom block formatters).
   Chain constants, RPC, explorer, tokens → Celo. EIP-712 domain chainId env-driven.
   **`tsc` build green.**
 - **Facilitator** (`facilitator/`) + **Indexer** (`indexer/`): `mantleChain` → `celoChain`
-  (id 44787, CELO native, forno RPC). EIP-712 verifier chainId env-driven. Allowed tokens
+  (id 42220, CELO native, forno RPC). EIP-712 verifier chainId env-driven. Allowed tokens
   → cUSD/USDC.
-- **Dashboard** (`dashboard/`): wallet add/switch → Celo Alfajores (`0xaef3`, CELO,
+- **Dashboard** (`dashboard/`): wallet add/switch → Celo (`0xa4ec`, CELO,
   forno, celoscan). PaymentModal/useBrowserWalletClient/PreflightBanner viem chain →
-  `celoAlfajores`, EIP-712 chainId 44787. Explorer links → alfajores.celoscan.io. Funding
+  `celo`, EIP-712 chainId 42220. Explorer links → celoscan.io. Funding
   prompts → faucet.celo.org. **`tsc --noEmit` green.**
 - **Agents** (`agents/`, 7 skill/demo files): inline `mantleChain` → `celoChain`, chain
   config + explorer links ported. **`tsc --noEmit` green.**
@@ -39,7 +39,7 @@ what changed and what remains.
 
 ## Remaining
 
-- **Testnet deploy** — gated on a funded Alfajores key (see `DEPLOY.md`). Once deployed,
+- **Testnet deploy** — gated on a funded Celo mainnet key (see `DEPLOY.md`). Once deployed,
   backfill addresses into `.env` / SDK constants / dashboard, and replace the README
   "pending" notes with real CeloScan links.
 - **Branding strings left intact on purpose** (they are keys that must stay consistent

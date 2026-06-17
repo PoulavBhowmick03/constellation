@@ -12,7 +12,7 @@ const txCell = (
   if (!hash) return <span style={{ color: 'var(--lf-ink-3)' }}>—</span>
   return (
     <a
-      href={`https://alfajores.celoscan.io/tx/${hash}`}
+      href={`https://celoscan.io/tx/${hash}`}
       target="_blank"
       rel="noopener noreferrer"
       style={{ color: 'var(--lf-ink-2)', textDecoration: 'underline dotted', whiteSpace: 'nowrap' }}

@@ -1,7 +1,7 @@
 'use client'
 import { useState, useEffect } from 'react'
 import { createPublicClient, encodeFunctionData, http, type Address } from 'viem'
-import { celoAlfajores } from 'viem/chains'
+import { celo } from 'viem/chains'
 import type { Skill } from '@/lib/types'
 import { useWallet } from '@/context/WalletContext'
 import ReputationGauge from './ReputationGauge'
@@ -56,7 +56,7 @@ export default function PaymentModal({ skill, onClose, onSuccess }: PaymentModal
   useEffect(() => {
     if (!account) { setAllowance(null); return }
     let cancelled = false
-    const publicClient = createPublicClient({ chain: celoAlfajores, transport: http() })
+    const publicClient = createPublicClient({ chain: celo, transport: http() })
     publicClient.readContract({
       address: USDC_ADDRESS, abi: ERC20_ABI, functionName: 'allowance',
       args: [account as Address, OPERATOR_ADDRESS],
@@ -79,7 +79,7 @@ export default function PaymentModal({ skill, onClose, onSuccess }: PaymentModal
         method: 'eth_sendTransaction',
         params: [{ from: account, to: USDC_ADDRESS, data }],
       }) as `0x${string}`
-      const publicClient = createPublicClient({ chain: celoAlfajores, transport: http() })
+      const publicClient = createPublicClient({ chain: celo, transport: http() })
       await publicClient.waitForTransactionReceipt({ hash })
       const a = await publicClient.readContract({
         address: USDC_ADDRESS, abi: ERC20_ABI, functionName: 'allowance',
@@ -134,7 +134,7 @@ export default function PaymentModal({ skill, onClose, onSuccess }: PaymentModal
         domain: {
           name: 'LedgerForge',
           version: '1',
-          chainId: 44787,
+          chainId: 42220,
           verifyingContract: SKILL_REGISTRY,
         },
         types: {
@@ -175,7 +175,7 @@ export default function PaymentModal({ skill, onClose, onSuccess }: PaymentModal
 
       const paymentProof = {
         scheme: 'exact' as const,
-        network: 'eip155:44787' as const,
+        network: 'eip155:42220' as const,
         payload: {
           signature,
           authorization: {
@@ -408,7 +408,7 @@ function StepSigning() {
         padding: '6px 12px', background: 'var(--lf-surface-2)',
         border: '1px solid var(--lf-border)', borderRadius: 4, color: 'var(--lf-ink-2)',
       }}>
-        Domain: LedgerForge · v1 · chainId 44787
+        Domain: LedgerForge · v1 · chainId 42220
       </div>
     </div>
   )

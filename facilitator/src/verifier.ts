@@ -66,7 +66,7 @@ export async function verifyPaymentProof(
   const domain = {
     name: "LedgerForge",
     version: "1",
-    chainId: Number(process.env.CELO_CHAIN_ID ?? 44787),
+    chainId: Number(process.env.CELO_CHAIN_ID ?? 42220),
     verifyingContract: process.env.SKILL_REGISTRY_ADDRESS as `0x${string}`,
   } as const;
 

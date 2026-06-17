@@ -26,7 +26,7 @@ interface Segment {
   accent?: boolean
 }
 
-const CELOSCAN_TX = 'https://alfajores.celoscan.io/tx/'
+const CELOSCAN_TX = 'https://celoscan.io/tx/'
 
 function isPresent(hash: string | undefined): hash is string {
   return !!hash && hash !== '' && hash !== '0x' && !/^0x0+$/.test(hash)

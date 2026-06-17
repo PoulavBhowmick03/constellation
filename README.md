@@ -3,9 +3,9 @@
 **The reputation-native agent service marketplace, built for Celo.**
 
 > This repository is the **Celo port** of LedgerForge (originally built on Mantle).
-> It targets the **Celo Alfajores testnet** today; Celo mainnet (chainId 42220) is a
+> It targets the **Celo mainnet** today; Celo mainnet (chainId 42220) is a
 > post-grant step. See [`MIGRATION.md`](./MIGRATION.md) for what changed and
-> [`DEPLOY.md`](./DEPLOY.md) for the testnet deploy runbook.
+> [`DEPLOY.md`](./DEPLOY.md) for the mainnet deploy runbook.
 
 ---
 
@@ -22,7 +22,7 @@ LedgerForge solves this with three parts: an HTTP-native x402 payment rail that 
 ## How It Works
 
 ```
-Consumer Agent                            Celo (Alfajores)
+Consumer Agent                            Celo (mainnet)
      │                                          │
      │  1. GET /bazaar  (ranked by reputation)  │
      │ ──────────────────────────────────▶ Bazaar API
@@ -73,11 +73,11 @@ Mantle build (pure-EVM, no chain-specific assumptions):
 | `x402Escrow` | Holds payment in escrow via ERC-20 `transferFrom`; released by the facilitator after job completion. |
 | `BazaarListings` | Stores listing display metadata (name, description, tags, logoURI); listing fee paid in cUSD. |
 
-> **Deployment status: ⏳ pending Alfajores testnet deploy.** Addresses are populated
+> **Deployment status: ⏳ pending mainnet deploy.** Addresses are populated
 > by `DEPLOY.md` and written into `.env` / `sdk/src/constants.ts` after broadcast. We do
 > not ship placeholder addresses — `forge build` + `forge test` (33 tests) pass green now.
 
-**Tokens (Celo Alfajores):** cUSD `0x874069Fa1Eb16D44d622F2e0Ca25eeA172369bC1`, USDC `0x2F25deB3848C207fc8E0c34035B3Ba7fC157602B`.
+**Tokens (Celo):** cUSD `0x765DE816845861e75A25fCA122bb6898B8B1282a`, USDC `0xcebA9300f2b948710d2653dD7B07f33A8B32118C`.
 
 ### Facilitator Server
 
@@ -108,7 +108,7 @@ cd indexer     && npm install && npm run dev
 cd dashboard   && npm install && npm run dev   # -> http://localhost:3000
 ```
 
-### Deploy to Alfajores testnet
+### Deploy to mainnet
 
 See [`DEPLOY.md`](./DEPLOY.md). In short: fund a deployer key from
 [faucet.celo.org](https://faucet.celo.org), then:
@@ -116,7 +116,7 @@ See [`DEPLOY.md`](./DEPLOY.md). In short: fund a deployer key from
 ```bash
 cd contracts
 forge script script/Deploy.s.sol \
-  --rpc-url https://alfajores-forno.celo-testnet.org \
+  --rpc-url https://forno.celo.org \
   --broadcast --verify --etherscan-api-key "$CELOSCAN_API_KEY"
 # copy the printed addresses into .env, then start the facilitator/indexer
 ```
@@ -134,7 +134,7 @@ const client = new LedgerForgeClient({
   facilitatorUrl: process.env.FACILITATOR_URL,
   bazaarApiUrl: process.env.BAZAAR_URL,
   privateKey: process.env.CONSUMER_PRIVATE_KEY,
-  rpcUrl: 'https://alfajores-forno.celo-testnet.org',
+  rpcUrl: 'https://forno.celo.org',
 })
 
 const result = await client.invokeSkill(skillId, { query: 'top Celo protocols by TVL' })

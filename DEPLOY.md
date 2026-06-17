@@ -1,45 +1,38 @@
-# Deploying LedgerForge to Celo Alfajores (testnet)
+# Deploying LedgerForge to Celo Mainnet
 
-This is the **build + testnet** runbook. Celo mainnet (chainId 42220) is a separate,
-manual step — do not broadcast to mainnet from automation.
+Celo mainnet (chainId **42220**), RPC `https://forno.celo.org`, explorer
+`https://celoscan.io`. **This spends real funds and is irreversible** — double-check the
+deployer balance and token addresses before broadcasting.
 
 ## 0. Prerequisites
 
 - [Foundry](https://book.getfoundry.sh/) (`forge`, `cast`)
-- Node 20+ and `npm`
-- A deployer EOA private key (testnet-only; never reuse a mainnet key)
+- A funded Celo mainnet deployer key (real CELO for gas)
+- A CeloScan API key (https://celoscan.io) for contract verification
 
-## 1. Fund a deployer on Alfajores
-
-1. Generate a key (or use an existing testnet-only one):
-   ```bash
-   cast wallet new
-   ```
-2. Fund it with testnet CELO (gas) + cUSD from the faucet:
-   - https://faucet.celo.org  → paste the address, select **Alfajores**.
-3. Confirm balance:
-   ```bash
-   cast balance <ADDRESS> --rpc-url https://alfajores-forno.celo-testnet.org
-   ```
-
-## 2. Configure env
+## 1. Configure env
 
 ```bash
 cp .env.example .env
 ```
 
-Fill in `.env` (this file is gitignored — never commit it):
+Fill `.env` (gitignored — never commit):
 
 | Var | Value |
 |---|---|
-| `DEPLOYER_PRIVATE_KEY` | the funded Alfajores key from step 1 |
-| `CELO_RPC` | `https://alfajores-forno.celo-testnet.org` |
-| `CELO_CHAIN_ID` | `44787` |
-| `CELOSCAN_API_KEY` | from https://celoscan.io (for `--verify`) |
-| `CUSD_ADDRESS` | `0x874069Fa1Eb16D44d622F2e0Ca25eeA172369bC1` (default) |
-| `USDC_ADDRESS` | `0x2F25deB3848C207fc8E0c34035B3Ba7fC157602B` (default) |
+| `DEPLOYER_PRIVATE_KEY` | funded Celo mainnet key |
+| `CELO_RPC` | `https://forno.celo.org` |
+| `CELO_CHAIN_ID` | `42220` |
+| `CELOSCAN_API_KEY` | from celoscan.io |
+| `CUSD_ADDRESS` | `0x765DE816845861e75A25fCA122bb6898B8B1282a` (default) |
+| `USDC_ADDRESS` | `0xcebA9300f2b948710d2653dD7B07f33A8B32118C` (default) |
 
-## 3. Build & test
+Check the deployer balance first:
+```bash
+cast balance <DEPLOYER_ADDRESS> --rpc-url https://forno.celo.org --ether
+```
+
+## 2. Build & test
 
 ```bash
 cd contracts
@@ -47,39 +40,36 @@ forge build
 forge test            # expect 33 passing
 ```
 
-## 4. Deploy
+## 3. Deploy (broadcasts real transactions)
 
 ```bash
 cd contracts
 forge script script/Deploy.s.sol \
-  --rpc-url https://alfajores-forno.celo-testnet.org \
+  --rpc-url https://forno.celo.org \
   --private-key "$DEPLOYER_PRIVATE_KEY" \
   --broadcast --verify --etherscan-api-key "$CELOSCAN_API_KEY"
 ```
 
-The script prints, on success:
-
+Prints on success:
 ```
 SKILL_REGISTRY_ADDRESS=0x...
 X402_ESCROW_ADDRESS=0x...
 BAZAAR_LISTINGS_ADDRESS=0x...
 ```
 
-## 5. Backfill addresses
+## 4. Backfill addresses
 
-Copy the three printed addresses into:
-
+Copy the three addresses into:
 1. `.env` — `SKILL_REGISTRY_ADDRESS`, `X402_ESCROW_ADDRESS`, `BAZAAR_LISTINGS_ADDRESS`
-2. `sdk/src/constants.ts` `DEFAULTS` (or rely on the env reads — the SDK already
-   prefers env vars and falls back to the zero address until set)
-3. The dashboard's `CONTRACTS` map / env (`dashboard/.env.local`)
+2. `sdk/src/constants.ts` `DEFAULTS` (or rely on the env reads)
+3. `dashboard/.env.local` (`CONTRACTS` map)
 
-Set `OPERATOR_ADDRESS` / `PROVIDER_ADDRESS`:
+Set `OPERATOR_ADDRESS` / `PROVIDER_ADDRESS` (must differ):
 ```bash
 cast wallet address --private-key $OPERATOR_PRIVATE_KEY
 ```
 
-## 6. Run the stack
+## 5. Run the stack
 
 ```bash
 cd facilitator && npm install && npm run dev
@@ -87,18 +77,15 @@ cd indexer     && npm install && npm run dev
 cd dashboard   && npm install && npm run dev
 ```
 
-Verify a skill registration and a settlement appear on
-https://alfajores.celoscan.io.
+Verify a skill registration + a settlement on https://celoscan.io.
+
+## Tokens (Celo mainnet)
+
+- cUSD `0x765DE816845861e75A25fCA122bb6898B8B1282a`
+- USDC (native, Circle) `0xcebA9300f2b948710d2653dD7B07f33A8B32118C`
 
 ## ERC-8004 note
 
-No canonical ERC-8004 registry is assumed on Celo yet. `SkillRegistry` try/catches the
-identity-registry call, so leaving `ERC8004_REPUTATION_REGISTRY` / `ERC8004_IDENTITY_REGISTRY`
-blank yields local-only reputation. Fill them once a Celo ERC-8004 deployment exists.
-
-## Mainnet (later, manual)
-
-Celo mainnet is chainId `42220`, RPC `https://forno.celo.org`, explorer
-`https://celoscan.io`, cUSD `0x765DE816845861e75A25fCA122bb6898B8B1282a`. Re-run step 4
-with those values and a **funded mainnet key**. This is intentionally out of scope for the
-automated/testnet flow.
+No canonical ERC-8004 registry is assumed on Celo. `SkillRegistry` try/catches the
+identity-registry call, so leaving `ERC8004_REPUTATION_REGISTRY` /
+`ERC8004_IDENTITY_REGISTRY` blank yields local-only reputation.
