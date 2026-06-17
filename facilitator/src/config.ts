@@ -2,19 +2,21 @@ import "dotenv/config";
 import { createPublicClient, createWalletClient, http } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 
-export const mantleChain = {
-  id: 5000,
-  name: "Mantle",
-  network: "mantle",
-  nativeCurrency: { name: "MNT", symbol: "MNT", decimals: 18 },
+const CELO_RPC = process.env.CELO_RPC ?? "https://alfajores-forno.celo-testnet.org";
+
+export const celoChain = {
+  id: Number(process.env.CELO_CHAIN_ID ?? 44787),
+  name: "Celo Alfajores",
+  network: "celo-alfajores",
+  nativeCurrency: { name: "CELO", symbol: "CELO", decimals: 18 },
   rpcUrls: {
-    default: { http: [process.env.MANTLE_RPC ?? "https://rpc.mantle.xyz"] },
-    public: { http: [process.env.MANTLE_RPC ?? "https://rpc.mantle.xyz"] },
+    default: { http: [CELO_RPC] },
+    public: { http: [CELO_RPC] },
   },
 } as const;
 
 export const publicClient = createPublicClient({
-  chain: mantleChain,
+  chain: celoChain,
   transport: http(),
 });
 
@@ -22,7 +24,7 @@ function _createOperatorClient() {
   const key = process.env.OPERATOR_PRIVATE_KEY;
   if (!key) throw new Error("OPERATOR_PRIVATE_KEY not set");
   const account = privateKeyToAccount(key as `0x${string}`);
-  return createWalletClient({ account, chain: mantleChain, transport: http() });
+  return createWalletClient({ account, chain: celoChain, transport: http() });
 }
 
 // Singleton — prevents nonce collisions from concurrent writeContract calls
@@ -61,6 +63,7 @@ export const PROVIDER_ADDRESS =
    "") as `0x${string}`;
 
 export const ALLOWED_TOKENS = new Set([
-  (process.env.USDE_ADDRESS ?? "0x5d3a1Ff2b6BAb83b63cd9AD0787074081a52ef34").toLowerCase(),
-  (process.env.USDC_ADDRESS ?? "0x09Bc4E0D864854c6aFB6eB9A9cdF58aC190D0dF9").toLowerCase(),
+  // cUSD + USDC on Celo Alfajores
+  (process.env.CUSD_ADDRESS ?? "0x874069fa1eb16d44d622f2e0ca25eea172369bc1").toLowerCase(),
+  (process.env.USDC_ADDRESS ?? "0x2f25deb3848c207fc8e0c34035b3ba7fc157602b").toLowerCase(),
 ]);

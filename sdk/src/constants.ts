@@ -1,20 +1,29 @@
 import type { Address } from "viem";
 
-export const MANTLE_MAINNET_CHAIN_ID = 5000;
-export const MANTLE_MAINNET_RPC = "https://rpc.mantle.xyz";
+// Celo Alfajores testnet. Mainnet (Celo, chainId 42220) values live in .env.
+export const CELO_ALFAJORES_CHAIN_ID = 44787;
+export const CELO_ALFAJORES_RPC = "https://alfajores-forno.celo-testnet.org";
+
+// Contract addresses are populated after the Alfajores deploy (see DEPLOY.md).
+// Until then they read from env; the zero placeholders flag an undeployed env.
+const ZERO = "0x0000000000000000000000000000000000000000" as Address;
+// Safe in both Node (services/agents) and browser bundles (dashboard).
+const env = (k: string): string | undefined =>
+  typeof process !== "undefined" ? process.env?.[k] : undefined;
 
 export const DEFAULTS = {
   bazaarUrl: "https://ledgerforge-indexer.fly.dev",
   facilitatorUrl: "https://ledgerforge-facilitator.fly.dev",
-  rpcUrl: MANTLE_MAINNET_RPC,
-  chainId: MANTLE_MAINNET_CHAIN_ID,
-  skillRegistry: "0x37041F257Bf8f1E201497Dc0BCDa1ae0d8317992" as Address,
-  bazaarListings: "0xaB5a52C30D769A7Eae1474857A6180E71765CBAF" as Address,
-  x402Escrow: "0x1d550b555B3a2e124ef611b55965848d6be233a2" as Address,
-  operatorAddress: "0xC0296012Cfbb0e6DF5dA7158B65Dbc46DD9650e0" as Address,
+  rpcUrl: CELO_ALFAJORES_RPC,
+  chainId: CELO_ALFAJORES_CHAIN_ID,
+  skillRegistry: (env("SKILL_REGISTRY_ADDRESS") ?? ZERO) as Address,
+  bazaarListings: (env("BAZAAR_LISTINGS_ADDRESS") ?? ZERO) as Address,
+  x402Escrow: (env("X402_ESCROW_ADDRESS") ?? ZERO) as Address,
+  operatorAddress: (env("OPERATOR_ADDRESS") ?? ZERO) as Address,
   tokens: {
-    USDC: "0x09Bc4E0D864854c6aFB6eB9A9cdF58aC190D0dF9" as Address,
-    USDe: "0x5d3a1Ff2b6BAb83b63cd9AD0787074081a52ef34" as Address,
+    // cUSD (Celo-native stable) replaces Mantle's USDe as the primary token.
+    cUSD: "0x874069fa1eb16d44d622f2e0ca25eea172369bc1" as Address,
+    USDC: "0x2f25deb3848c207fc8e0c34035b3ba7fc157602b" as Address,
   },
 } as const;
 

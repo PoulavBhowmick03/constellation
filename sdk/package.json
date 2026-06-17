@@ -1,7 +1,7 @@
 {
-  "name": "@ishitaaaaw/x402-mantle",
+  "name": "@ishitaaaaw/x402-celo",
   "version": "0.1.0",
-  "description": "TypeScript SDK for the LedgerForge x402 payment rail on Mantle Network — discover, pay for, and execute on-chain agent skills.",
+  "description": "TypeScript SDK for the LedgerForge x402 payment rail on Celo — discover, pay for, and execute on-chain agent skills.",
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -23,7 +23,7 @@
   },
   "keywords": [
     "x402",
-    "mantle",
+    "celo",
     "erc-8004",
     "agent",
     "payments",

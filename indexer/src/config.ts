@@ -1,19 +1,21 @@
 import "dotenv/config";
 import { createPublicClient, http } from "viem";
 
-export const mantleChain = {
-  id: 5000,
-  name: "Mantle",
-  network: "mantle",
-  nativeCurrency: { name: "MNT", symbol: "MNT", decimals: 18 },
+const CELO_RPC = process.env.CELO_RPC ?? "https://alfajores-forno.celo-testnet.org";
+
+export const celoChain = {
+  id: Number(process.env.CELO_CHAIN_ID ?? 44787),
+  name: "Celo Alfajores",
+  network: "celo-alfajores",
+  nativeCurrency: { name: "CELO", symbol: "CELO", decimals: 18 },
   rpcUrls: {
-    default: { http: [process.env.MANTLE_RPC ?? "https://rpc.mantle.xyz"] },
-    public: { http: [process.env.MANTLE_RPC ?? "https://rpc.mantle.xyz"] },
+    default: { http: [CELO_RPC] },
+    public: { http: [CELO_RPC] },
   },
 } as const;
 
 export const publicClient = createPublicClient({
-  chain: mantleChain,
+  chain: celoChain,
   transport: http(),
 });
 
