@@ -220,9 +220,9 @@ export default function HomePage() {
           display: 'flex', justifyContent: 'space-between', maxWidth: 1200, margin: '64px auto 0',
           fontFamily: 'var(--f-mono)', fontSize: 12, color: 'var(--lf-ink-3)', flexWrap: 'wrap', gap: 16,
         }}>
-          <span>SkillRegistry: <a href={`https://mantlescan.xyz/address/${CONTRACTS.SkillRegistry}`} target="_blank" rel="noopener noreferrer" style={{ color: 'white', opacity: 0.7 }}>{truncAddr(CONTRACTS.SkillRegistry)} ↗</a></span>
-          <span>x402Escrow: <a href={`https://mantlescan.xyz/address/${CONTRACTS.x402Escrow}`} target="_blank" rel="noopener noreferrer" style={{ color: 'white', opacity: 0.7 }}>{truncAddr(CONTRACTS.x402Escrow)} ↗</a></span>
-          <span>BazaarListings: <a href={`https://mantlescan.xyz/address/${CONTRACTS.BazaarListings}`} target="_blank" rel="noopener noreferrer" style={{ color: 'white', opacity: 0.7 }}>{truncAddr(CONTRACTS.BazaarListings)} ↗</a></span>
+          <span>SkillRegistry: <a href={`https://alfajores.celoscan.io/address/${CONTRACTS.SkillRegistry}`} target="_blank" rel="noopener noreferrer" style={{ color: 'white', opacity: 0.7 }}>{truncAddr(CONTRACTS.SkillRegistry)} ↗</a></span>
+          <span>x402Escrow: <a href={`https://alfajores.celoscan.io/address/${CONTRACTS.x402Escrow}`} target="_blank" rel="noopener noreferrer" style={{ color: 'white', opacity: 0.7 }}>{truncAddr(CONTRACTS.x402Escrow)} ↗</a></span>
+          <span>BazaarListings: <a href={`https://alfajores.celoscan.io/address/${CONTRACTS.BazaarListings}`} target="_blank" rel="noopener noreferrer" style={{ color: 'white', opacity: 0.7 }}>{truncAddr(CONTRACTS.BazaarListings)} ↗</a></span>
         </div>
       </section>
     </div>

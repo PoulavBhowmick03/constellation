@@ -202,7 +202,7 @@ function StepActions({ step }: { step: StepState }) {
   if (!tx) return null
   return (
     <a
-      href={`https://mantlescan.xyz/tx/${tx}`}
+      href={`https://alfajores.celoscan.io/tx/${tx}`}
       target="_blank"
       rel="noopener noreferrer"
       style={{

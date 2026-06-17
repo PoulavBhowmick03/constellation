@@ -8,7 +8,7 @@ import {
   type Hex,
   type WalletClient,
 } from 'viem'
-import { mantle } from 'viem/chains'
+import { celoAlfajores } from 'viem/chains'
 
 // Mantle mainnet constants
 const USDC_ADDRESS = '0x09Bc4E0D864854c6aFB6eB9A9cdF58aC190D0dF9' as const
@@ -79,7 +79,7 @@ export default function PreflightBanner({
   // walletClient to read.
   useEffect(() => {
     if (!account) return
-    const publicClient = createPublicClient({ chain: mantle, transport: http() })
+    const publicClient = createPublicClient({ chain: celoAlfajores, transport: http() })
     setState((s) => ({ ...s, loading: true, error: undefined }))
     Promise.all([
       publicClient.readContract({
@@ -140,7 +140,7 @@ export default function PreflightBanner({
           Wallet needs at least <b>{need} USDC</b> on Mantle to run the demo (you have {have}).
         </span>
         <a
-          href="https://app.mantle.xyz/bridge"
+          href="https://faucet.celo.org"
           target="_blank"
           rel="noopener noreferrer"
           style={pillLink}
@@ -166,7 +166,7 @@ export default function PreflightBanner({
               setState((s) => ({ ...s, approving: true, error: undefined }))
               const txHash = await walletClient.writeContract({
                 account,
-                chain: mantle,
+                chain: celoAlfajores,
                 address: USDC_ADDRESS,
                 abi: ERC20_ABI,
                 functionName: 'approve',

@@ -14,19 +14,19 @@ import { privateKeyToAccount } from "viem/accounts";
 import { verifySettlementAccess } from "./skill-auth.js";
 import type { RegisteredSpawnSkill, SpawnSkillDefinition } from "./types.js";
 
-const MANTLE_EXPLORER = process.env.MANTLE_EXPLORER ?? "https://mantlescan.xyz";
-const MANTLE_RPC = process.env.MANTLE_RPC ?? "https://rpc.mantle.xyz";
+const CELO_EXPLORER = process.env.CELO_EXPLORER ?? "https://alfajores.celoscan.io";
+const CELO_RPC = process.env.CELO_RPC ?? "https://alfajores-forno.celo-testnet.org";
 const SPAWN_AGENT_PORT = Number(process.env.SPAWN_AGENT_PORT ?? "3003");
 const LOCAL_SKILL_BASE_URL =
   process.env.SPAWN_SKILL_BASE_URL ?? `http://localhost:${SPAWN_AGENT_PORT}`;
 
-const mantleChain = {
-  id: 5000,
-  name: "Mantle",
-  nativeCurrency: { name: "MNT", symbol: "MNT", decimals: 18 },
+const celoChain = {
+  id: 44787,
+  name: "Celo Alfajores",
+  nativeCurrency: { name: "CELO", symbol: "CELO", decimals: 18 },
   rpcUrls: {
-    default: { http: [MANTLE_RPC] },
-    public: { http: [MANTLE_RPC] },
+    default: { http: [CELO_RPC] },
+    public: { http: [CELO_RPC] },
   },
 } as const;
 
@@ -113,8 +113,8 @@ const SPAWN_SKILLS: readonly SpawnSkillDefinition[] = [
 ] as const;
 
 const publicClient = createPublicClient({
-  chain: mantleChain,
-  transport: http(MANTLE_RPC),
+  chain: celoChain,
+  transport: http(CELO_RPC),
 });
 
 function requiredEnv(name: string): string {
@@ -131,8 +131,8 @@ function getWalletClient() {
   const account = privateKeyToAccount(requiredEnv("OPERATOR_PRIVATE_KEY") as Hex);
   return createWalletClient({
     account,
-    chain: mantleChain,
-    transport: http(MANTLE_RPC),
+    chain: celoChain,
+    transport: http(CELO_RPC),
   });
 }
 
@@ -141,7 +141,7 @@ function endpointFor(skill: SpawnSkillDefinition): string {
 }
 
 function txLink(txHash: Hex): string {
-  return `${MANTLE_EXPLORER.replace(/\/$/, "")}/tx/${txHash}`;
+  return `${CELO_EXPLORER.replace(/\/$/, "")}/tx/${txHash}`;
 }
 
 function json(res: ServerResponse, statusCode: number, body: unknown): void {

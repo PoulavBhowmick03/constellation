@@ -178,7 +178,7 @@ export class DemoRuntime {
       if (!this.config.dryRun) {
         if (balance < this.config.minBalance) {
           throw new Error(
-            `Insufficient USDC (have ${formatTokenAmount(balance)}, need ${formatTokenAmount(this.config.minBalance)}). Bridge USDC to Mantle and try again: https://app.mantle.xyz/bridge`,
+            `Insufficient USDC (have ${formatTokenAmount(balance)}, need ${formatTokenAmount(this.config.minBalance)}). Get testnet cUSD/CELO from the faucet: https://faucet.celo.org`,
           );
         }
         const requiredAllowance = BigInt(this.config.pricePerCall) * BigInt(maxPaidCalls);
@@ -292,8 +292,8 @@ export class DemoRuntime {
     lines.push("");
     lines.push(`- **Started:** ${this.startedAt.toISOString()}`);
     lines.push(`- **Finished:** ${finishedAt.toISOString()} (${elapsedSec}s elapsed)`);
-    lines.push(`- **Consumer:** [\`${this.consumerAddress}\`](https://mantlescan.xyz/address/${this.consumerAddress})`);
-    lines.push(`- **Provider (recipient):** [\`${this.provider.address}\`](https://mantlescan.xyz/address/${this.provider.address})`);
+    lines.push(`- **Consumer:** [\`${this.consumerAddress}\`](https://alfajores.celoscan.io/address/${this.consumerAddress})`);
+    lines.push(`- **Provider (recipient):** [\`${this.provider.address}\`](https://alfajores.celoscan.io/address/${this.provider.address})`);
     lines.push(`- **Provider source:** ${this.provider.source}`);
     lines.push(`- **Mode:** ${this.config.dryRun ? "dry-run" : "live (paid)"}`);
     lines.push(`- **Price per call:** ${formatUnits(BigInt(this.config.pricePerCall), 6)} USDC`);

@@ -35,7 +35,7 @@ export interface BazaarSkill {
 
 export interface X402PaymentDetails {
   scheme: "exact";
-  network: "eip155:5000";
+  network: "eip155:44787";
   maxAmountRequired: string;
   resource: string;
   description: string;
@@ -52,7 +52,7 @@ export interface X402PaymentDetails {
 
 export interface X402PaymentProof {
   scheme: "exact";
-  network: "eip155:5000";
+  network: "eip155:44787";
   payload: {
     signature: Hex;
     authorization: {

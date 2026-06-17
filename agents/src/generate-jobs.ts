@@ -16,8 +16,8 @@ import type { BazaarSkill, FacilitateResponse, X402PaymentDetails, X402PaymentPr
  * (comma-separated; default a spread of public paid skills).
  */
 
-const MANTLE_RPC = process.env.MANTLE_RPC ?? "https://rpc.mantle.xyz";
-const MANTLE_EXPLORER = process.env.MANTLE_EXPLORER ?? "https://mantlescan.xyz";
+const CELO_RPC = process.env.CELO_RPC ?? "https://alfajores-forno.celo-testnet.org";
+const CELO_EXPLORER = process.env.CELO_EXPLORER ?? "https://alfajores.celoscan.io";
 const BAZAAR_API =
   process.env.BAZAAR_API_URL ?? process.env.NEXT_PUBLIC_BAZAAR_API ?? "https://ledgerforge-indexer.fly.dev";
 const FACILITATOR_URL =
@@ -25,11 +25,11 @@ const FACILITATOR_URL =
 const AMOUNT_UNITS = BigInt(process.env.JOB_AMOUNT_UNITS ?? "10000"); // 0.01 USDC
 const DEFAULT_SKILL_IDS = [13, 14, 11, 12, 15, 10, 1];
 
-const mantleChain = {
-  id: 5000,
-  name: "Mantle",
-  nativeCurrency: { name: "MNT", symbol: "MNT", decimals: 18 },
-  rpcUrls: { default: { http: [MANTLE_RPC] }, public: { http: [MANTLE_RPC] } },
+const celoChain = {
+  id: 44787,
+  name: "Celo Alfajores",
+  nativeCurrency: { name: "CELO", symbol: "CELO", decimals: 18 },
+  rpcUrls: { default: { http: [CELO_RPC] }, public: { http: [CELO_RPC] } },
 } as const;
 
 function requiredEnv(name: string): string {
@@ -65,7 +65,7 @@ async function settleJob(
   index: number,
 ): Promise<FacilitateResponse> {
   const account = privateKeyToAccount(requiredEnv("CONSUMER_PRIVATE_KEY") as Hex);
-  const walletClient = createWalletClient({ account, chain: mantleChain, transport: http(MANTLE_RPC) });
+  const walletClient = createWalletClient({ account, chain: celoChain, transport: http(CELO_RPC) });
 
   const token = getAddress((skill.token ?? skill.asset ?? requiredAddress("USDC_ADDRESS")) as Address);
   const providerAddress = requiredAddress("SPAWN_PROVIDER_ADDRESS");
@@ -76,7 +76,7 @@ async function settleJob(
 
   const paymentDetails: X402PaymentDetails = {
     scheme: "exact",
-    network: "eip155:5000",
+    network: "eip155:44787",
     maxAmountRequired: amount.toString(),
     resource: skill.endpoint,
     description: `LedgerForge x402 payment for ${skill.name}`,
@@ -100,7 +100,7 @@ async function settleJob(
 
   const signature = await walletClient.signTypedData({
     account,
-    domain: { name: "LedgerForge", version: "1", chainId: 5000, verifyingContract: requiredAddress("SKILL_REGISTRY_ADDRESS") },
+    domain: { name: "LedgerForge", version: "1", chainId: 44787, verifyingContract: requiredAddress("SKILL_REGISTRY_ADDRESS") },
     types: {
       Payment: [
         { name: "from", type: "address" },
@@ -126,7 +126,7 @@ async function settleJob(
 
   const proof: X402PaymentProof = {
     scheme: "exact",
-    network: "eip155:5000",
+    network: "eip155:44787",
     payload: { signature, authorization },
     reputationScore: score,
   };
@@ -154,7 +154,7 @@ async function settleJob(
 }
 
 function txLink(hash?: string): string {
-  return hash ? `${MANTLE_EXPLORER.replace(/\/$/, "")}/tx/${hash}` : "(no tx)";
+  return hash ? `${CELO_EXPLORER.replace(/\/$/, "")}/tx/${hash}` : "(no tx)";
 }
 
 async function main(): Promise<void> {

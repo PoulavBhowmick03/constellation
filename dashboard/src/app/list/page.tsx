@@ -6,7 +6,7 @@ import TierBadge from '@/components/TierBadge'
 import SkillCard from '@/components/SkillCard'
 import AddressChip from '@/components/AddressChip'
 
-const MANTLE_CHAIN_ID = '0x1388'
+const CELO_CHAIN_ID = '0xaef3'
 const OPERATOR = '0xC0296012Cfbb0e6DF5dA7158B65Dbc46DD9650e0'
 const SKILL_REGISTRY = '0x37041F257Bf8f1E201497Dc0BCDa1ae0d8317992'
 
@@ -73,12 +73,12 @@ export default function ListPage() {
       const accounts = (await window.ethereum.request({ method: 'eth_requestAccounts' })) as string[]
       setAccount(accounts[0])
       try {
-        await window.ethereum.request({ method: 'wallet_switchEthereumChain', params: [{ chainId: MANTLE_CHAIN_ID }] })
+        await window.ethereum.request({ method: 'wallet_switchEthereumChain', params: [{ chainId: CELO_CHAIN_ID }] })
       } catch (sw: unknown) {
         if ((sw as { code?: number }).code === 4902) {
           await window.ethereum.request({
             method: 'wallet_addEthereumChain',
-            params: [{ chainId: MANTLE_CHAIN_ID, chainName: 'Mantle', nativeCurrency: { name: 'MNT', symbol: 'MNT', decimals: 18 }, rpcUrls: ['https://rpc.mantle.xyz'], blockExplorerUrls: ['https://mantlescan.xyz'] }],
+            params: [{ chainId: CELO_CHAIN_ID, chainName: 'Celo Alfajores', nativeCurrency: { name: 'CELO', symbol: 'CELO', decimals: 18 }, rpcUrls: ['https://alfajores-forno.celo-testnet.org'], blockExplorerUrls: ['https://alfajores.celoscan.io'] }],
           })
         }
       }
@@ -315,7 +315,7 @@ export default function ListPage() {
                       <SummaryRow k="Price per call" v={`${form.price || '0'} USDC`} />
                       <SummaryRow k="Escrow" v={form.escrow ? 'Enabled (jobs > $10)' : 'Off'} />
                       <SummaryRow k="Registry" v={<AddressChip address={SKILL_REGISTRY} />} />
-                      <SummaryRow k="Estimated gas" v="~0.0008 MNT" last />
+                      <SummaryRow k="Estimated gas" v="~0.0008 CELO" last />
                     </tbody>
                   </table>
                 </div>

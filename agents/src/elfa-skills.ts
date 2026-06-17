@@ -43,20 +43,20 @@ import {
 import { privateKeyToAccount } from "viem/accounts";
 import { verifySettlementAccess } from "./skill-auth.js";
 
-const MANTLE_EXPLORER = process.env.MANTLE_EXPLORER ?? "https://mantlescan.xyz";
-const MANTLE_RPC = process.env.MANTLE_RPC ?? "https://rpc.mantle.xyz";
+const CELO_EXPLORER = process.env.CELO_EXPLORER ?? "https://alfajores.celoscan.io";
+const CELO_RPC = process.env.CELO_RPC ?? "https://alfajores-forno.celo-testnet.org";
 const ELFA_SKILL_PORT = Number(process.env.ELFA_SKILL_PORT ?? "3007");
 const ELFA_SKILL_BASE =
   process.env.ELFA_SKILL_PUBLIC_URL ?? `http://localhost:${ELFA_SKILL_PORT}`;
 const ELFA_API_BASE = process.env.ELFA_API_BASE ?? "https://api.elfa.ai";
 
-const mantleChain = {
-  id: 5000,
-  name: "Mantle",
-  nativeCurrency: { name: "MNT", symbol: "MNT", decimals: 18 },
+const celoChain = {
+  id: 44787,
+  name: "Celo Alfajores",
+  nativeCurrency: { name: "CELO", symbol: "CELO", decimals: 18 },
   rpcUrls: {
-    default: { http: [MANTLE_RPC] },
-    public: { http: [MANTLE_RPC] },
+    default: { http: [CELO_RPC] },
+    public: { http: [CELO_RPC] },
   },
 } as const;
 
@@ -160,8 +160,8 @@ const ELFA_SKILLS: ElfaSkillDef[] = [
 ];
 
 const publicClient = createPublicClient({
-  chain: mantleChain,
-  transport: http(MANTLE_RPC),
+  chain: celoChain,
+  transport: http(CELO_RPC),
 });
 
 // ── Validation ─────────────────────────────────────────────────────────────
@@ -431,11 +431,11 @@ export function startElfaSkillServer(): void {
 // ── Registration ─────────────────────────────────────────────────────────────
 function getWalletClient() {
   const account = privateKeyToAccount(requiredEnv("OPERATOR_PRIVATE_KEY") as Hex);
-  return createWalletClient({ account, chain: mantleChain, transport: http(MANTLE_RPC) });
+  return createWalletClient({ account, chain: celoChain, transport: http(CELO_RPC) });
 }
 
 function txLink(txHash: Hex): string {
-  return `${MANTLE_EXPLORER.replace(/\/$/, "")}/tx/${txHash}`;
+  return `${CELO_EXPLORER.replace(/\/$/, "")}/tx/${txHash}`;
 }
 
 export async function registerElfaSkills(): Promise<RegisteredElfaSkill[]> {

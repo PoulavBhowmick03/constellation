@@ -20,19 +20,19 @@ const _dirname = dirname(fileURLToPath(import.meta.url));
 const REALCLAW_BIN = resolve(_dirname, "..", "node_modules", ".bin", "byreal-cli");
 const PERPS_BIN = resolve(_dirname, "..", "node_modules", ".bin", "byreal-perps-cli");
 
-const MANTLE_EXPLORER = process.env.MANTLE_EXPLORER ?? "https://mantlescan.xyz";
-const MANTLE_RPC = process.env.MANTLE_RPC ?? "https://rpc.mantle.xyz";
+const CELO_EXPLORER = process.env.CELO_EXPLORER ?? "https://alfajores.celoscan.io";
+const CELO_RPC = process.env.CELO_RPC ?? "https://alfajores-forno.celo-testnet.org";
 const BYREAL_SKILL_PORT = Number(process.env.BYREAL_SKILL_PORT ?? "3006");
 const LOCAL_SKILL_BASE_URL =
   process.env.BYREAL_SKILL_PUBLIC_URL ?? `http://localhost:${BYREAL_SKILL_PORT}`;
 
-const mantleChain = {
-  id: 5000,
-  name: "Mantle",
-  nativeCurrency: { name: "MNT", symbol: "MNT", decimals: 18 },
+const celoChain = {
+  id: 44787,
+  name: "Celo Alfajores",
+  nativeCurrency: { name: "CELO", symbol: "CELO", decimals: 18 },
   rpcUrls: {
-    default: { http: [MANTLE_RPC] },
-    public: { http: [MANTLE_RPC] },
+    default: { http: [CELO_RPC] },
+    public: { http: [CELO_RPC] },
   },
 } as const;
 
@@ -146,8 +146,8 @@ const BYREAL_SKILLS: ByrealSkillDef[] = [
 ];
 
 const publicClient = createPublicClient({
-  chain: mantleChain,
-  transport: http(MANTLE_RPC),
+  chain: celoChain,
+  transport: http(CELO_RPC),
 });
 
 const SOLANA_ADDR_RE = /^[1-9A-HJ-NP-Za-km-z]{32,44}$/;
@@ -427,7 +427,7 @@ function requiredAddress(name: string): Address {
 
 function getWalletClient() {
   const account = privateKeyToAccount(requiredEnv("OPERATOR_PRIVATE_KEY") as Hex);
-  return createWalletClient({ account, chain: mantleChain, transport: http(MANTLE_RPC) });
+  return createWalletClient({ account, chain: celoChain, transport: http(CELO_RPC) });
 }
 
 function endpointFor(skill: ByrealSkillDef): string {
@@ -435,7 +435,7 @@ function endpointFor(skill: ByrealSkillDef): string {
 }
 
 function txLink(txHash: Hex): string {
-  return `${MANTLE_EXPLORER.replace(/\/$/, "")}/tx/${txHash}`;
+  return `${CELO_EXPLORER.replace(/\/$/, "")}/tx/${txHash}`;
 }
 
 export async function registerByrealSkills(): Promise<RegisteredByrealSkill[]> {

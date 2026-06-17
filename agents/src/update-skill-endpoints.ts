@@ -9,16 +9,16 @@ import {
 } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 
-const MANTLE_RPC = process.env.MANTLE_RPC ?? "https://rpc.mantle.xyz";
-const MANTLE_EXPLORER = process.env.MANTLE_EXPLORER ?? "https://mantlescan.xyz";
+const CELO_RPC = process.env.CELO_RPC ?? "https://alfajores-forno.celo-testnet.org";
+const CELO_EXPLORER = process.env.CELO_EXPLORER ?? "https://alfajores.celoscan.io";
 
-const mantleChain = {
-  id: 5000,
-  name: "Mantle",
-  nativeCurrency: { name: "MNT", symbol: "MNT", decimals: 18 },
+const celoChain = {
+  id: 44787,
+  name: "Celo Alfajores",
+  nativeCurrency: { name: "CELO", symbol: "CELO", decimals: 18 },
   rpcUrls: {
-    default: { http: [MANTLE_RPC] },
-    public: { http: [MANTLE_RPC] },
+    default: { http: [CELO_RPC] },
+    public: { http: [CELO_RPC] },
   },
 } as const;
 
@@ -91,7 +91,7 @@ function remapEndpoint(endpoint: string): string | null {
 }
 
 function txLink(hash: Hex): string {
-  return `${MANTLE_EXPLORER}/tx/${hash}`;
+  return `${CELO_EXPLORER}/tx/${hash}`;
 }
 
 function requiredEnv(key: string): string {
@@ -107,10 +107,10 @@ async function main() {
 
   if (!isAddress(registryAddress)) throw new Error("SKILL_REGISTRY_ADDRESS is not a valid address");
 
-  const transport = http(MANTLE_RPC);
-  const publicClient = createPublicClient({ chain: mantleChain, transport });
+  const transport = http(CELO_RPC);
+  const publicClient = createPublicClient({ chain: celoChain, transport });
   const account = privateKeyToAccount(privateKey);
-  const walletClient = createWalletClient({ account, chain: mantleChain, transport });
+  const walletClient = createWalletClient({ account, chain: celoChain, transport });
 
   const total = Number(
     await publicClient.readContract({

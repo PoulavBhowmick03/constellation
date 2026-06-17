@@ -5,6 +5,7 @@ import {
   maxUint256,
   parseUnits,
   type Address,
+  type Chain,
   type Hex,
   type PrivateKeyAccount,
   type PublicClient,
@@ -105,13 +106,13 @@ export class LedgerForgeClient {
     } else if (this.#account) {
       this.#walletClient = createWalletClient({
         account: this.#account,
-        chain: celoAlfajores,
+        chain: celoAlfajores as Chain,
         transport: http(this.rpcUrl),
       });
     }
 
     this.#publicClient = createPublicClient({
-      chain: celoAlfajores,
+      chain: celoAlfajores as Chain,
       transport: http(this.rpcUrl),
     });
   }
@@ -369,7 +370,7 @@ export class LedgerForgeClient {
 
     const txHash = await walletClient.writeContract({
       account,
-      chain: celoAlfajores,
+      chain: celoAlfajores as Chain,
       address: tokenAddress,
       abi: ERC20_ABI,
       functionName: "approve",

@@ -10,7 +10,7 @@ declare global {
   }
 }
 
-const MANTLE_CHAIN_ID = '0x1388'
+const CELO_CHAIN_ID = '0xaef3'
 
 interface WalletContextType {
   account: string | null
@@ -43,17 +43,17 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       try {
         await window.ethereum.request({
           method: 'wallet_switchEthereumChain',
-          params: [{ chainId: MANTLE_CHAIN_ID }],
+          params: [{ chainId: CELO_CHAIN_ID }],
         })
       } catch (sw: unknown) {
         if ((sw as { code?: number }).code === 4902) {
           await window.ethereum.request({
             method: 'wallet_addEthereumChain',
             params: [{
-              chainId: MANTLE_CHAIN_ID, chainName: 'Mantle',
-              nativeCurrency: { name: 'MNT', symbol: 'MNT', decimals: 18 },
-              rpcUrls: ['https://rpc.mantle.xyz'],
-              blockExplorerUrls: ['https://mantlescan.xyz'],
+              chainId: CELO_CHAIN_ID, chainName: 'Celo Alfajores',
+              nativeCurrency: { name: 'CELO', symbol: 'CELO', decimals: 18 },
+              rpcUrls: ['https://alfajores-forno.celo-testnet.org'],
+              blockExplorerUrls: ['https://alfajores.celoscan.io'],
             }],
           })
         }

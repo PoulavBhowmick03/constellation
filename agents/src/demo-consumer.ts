@@ -3,19 +3,19 @@ import { createWalletClient, getAddress, http, type Address, type Hex } from "vi
 import { privateKeyToAccount } from "viem/accounts";
 import type { BazaarSkill, FacilitateResponse, X402PaymentDetails, X402PaymentProof } from "./types.js";
 
-const MANTLE_RPC = process.env.MANTLE_RPC ?? "https://rpc.mantle.xyz";
+const CELO_RPC = process.env.CELO_RPC ?? "https://alfajores-forno.celo-testnet.org";
 const BAZAAR_API =
   process.env.BAZAAR_API_URL ?? process.env.NEXT_PUBLIC_BAZAAR_API ?? "http://localhost:3002";
 const FACILITATOR_URL =
   process.env.FACILITATOR_URL ?? process.env.NEXT_PUBLIC_FACILITATOR_URL ?? "http://localhost:3001";
 
-const mantleChain = {
-  id: 5000,
-  name: "Mantle",
-  nativeCurrency: { name: "MNT", symbol: "MNT", decimals: 18 },
+const celoChain = {
+  id: 44787,
+  name: "Celo Alfajores",
+  nativeCurrency: { name: "CELO", symbol: "CELO", decimals: 18 },
   rpcUrls: {
-    default: { http: [MANTLE_RPC] },
-    public: { http: [MANTLE_RPC] },
+    default: { http: [CELO_RPC] },
+    public: { http: [CELO_RPC] },
   },
 } as const;
 
@@ -74,8 +74,8 @@ async function buildPaymentProof(skill: BazaarSkill): Promise<{
   const account = privateKeyToAccount(requiredEnv("CONSUMER_PRIVATE_KEY") as Hex);
   const walletClient = createWalletClient({
     account,
-    chain: mantleChain,
-    transport: http(MANTLE_RPC),
+    chain: celoChain,
+    transport: http(CELO_RPC),
   });
 
   const amount = skillPrice(skill);
@@ -89,7 +89,7 @@ async function buildPaymentProof(skill: BazaarSkill): Promise<{
 
   const paymentDetails: X402PaymentDetails = {
     scheme: "exact",
-    network: "eip155:5000",
+    network: "eip155:44787",
     maxAmountRequired: amount.toString(),
     resource: providerEndpoint,
     description: "LedgerForge x402 payment for spawn-failure-analyst",
@@ -116,7 +116,7 @@ async function buildPaymentProof(skill: BazaarSkill): Promise<{
     domain: {
       name: "LedgerForge",
       version: "1",
-      chainId: 5000,
+      chainId: 44787,
       verifyingContract: requiredAddress("SKILL_REGISTRY_ADDRESS"),
     },
     types: {
@@ -146,7 +146,7 @@ async function buildPaymentProof(skill: BazaarSkill): Promise<{
     paymentDetails,
     paymentProof: {
       scheme: "exact",
-      network: "eip155:5000",
+      network: "eip155:44787",
       payload: {
         signature,
         authorization,

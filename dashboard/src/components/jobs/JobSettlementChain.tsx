@@ -6,7 +6,7 @@ import type React from 'react'
  *
  *   Pull → Create → Complete → Rep → ERC-8004
  *
- * Each segment is a mantlescan link when a tx hash is present, and a dimmed
+ * Each segment is a celoscan link when a tx hash is present, and a dimmed
  * "—" / "pending" otherwise. Built as a sibling of agent-demo/SettlementChain
  * (which renders an aggregated table) so /agent-demo is zero-regression.
  */
@@ -26,7 +26,7 @@ interface Segment {
   accent?: boolean
 }
 
-const MANTLESCAN_TX = 'https://mantlescan.xyz/tx/'
+const CELOSCAN_TX = 'https://alfajores.celoscan.io/tx/'
 
 function isPresent(hash: string | undefined): hash is string {
   return !!hash && hash !== '' && hash !== '0x' && !/^0x0+$/.test(hash)
@@ -87,7 +87,7 @@ function SegmentCell({ seg, last }: { seg: Segment; last: boolean }): React.Reac
       >
         {present ? (
           <a
-            href={`${MANTLESCAN_TX}${seg.hash}`}
+            href={`${CELOSCAN_TX}${seg.hash}`}
             target="_blank"
             rel="noopener noreferrer"
             title={`${seg.label} · ${seg.hash}`}

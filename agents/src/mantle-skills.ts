@@ -13,8 +13,8 @@ import {
 import { privateKeyToAccount } from "viem/accounts";
 import { verifySettlementAccess } from "./skill-auth.js";
 
-const MANTLE_EXPLORER = process.env.MANTLE_EXPLORER ?? "https://mantlescan.xyz";
-const MANTLE_RPC = process.env.MANTLE_RPC ?? "https://rpc.mantle.xyz";
+const CELO_EXPLORER = process.env.CELO_EXPLORER ?? "https://alfajores.celoscan.io";
+const CELO_RPC = process.env.CELO_RPC ?? "https://alfajores-forno.celo-testnet.org";
 const MANTLE_SKILL_PORT = Number(process.env.MANTLE_SKILL_PORT ?? "3005");
 const LOCAL_SKILL_BASE_URL =
   process.env.MANTLE_SKILL_BASE_URL ?? `http://localhost:${MANTLE_SKILL_PORT}`;
@@ -52,13 +52,13 @@ interface RegisteredMantleSkill extends MantleSkillDef {
   endpoint: string;
 }
 
-const mantleChain = {
-  id: 5000,
-  name: "Mantle",
-  nativeCurrency: { name: "MNT", symbol: "MNT", decimals: 18 },
+const celoChain = {
+  id: 44787,
+  name: "Celo Alfajores",
+  nativeCurrency: { name: "CELO", symbol: "CELO", decimals: 18 },
   rpcUrls: {
-    default: { http: [MANTLE_RPC] },
-    public: { http: [MANTLE_RPC] },
+    default: { http: [CELO_RPC] },
+    public: { http: [CELO_RPC] },
   },
 } as const;
 
@@ -204,8 +204,8 @@ const MANTLE_SKILLS: MantleSkillDef[] = [
 ];
 
 const publicClient = createPublicClient({
-  chain: mantleChain,
-  transport: http(MANTLE_RPC),
+  chain: celoChain,
+  transport: http(CELO_RPC),
 });
 
 function requiredEnv(name: string): string {
@@ -220,7 +220,7 @@ function requiredAddress(name: string): Address {
 
 function getWalletClient() {
   const account = privateKeyToAccount(requiredEnv("OPERATOR_PRIVATE_KEY") as Hex);
-  return createWalletClient({ account, chain: mantleChain, transport: http(MANTLE_RPC) });
+  return createWalletClient({ account, chain: celoChain, transport: http(CELO_RPC) });
 }
 
 function endpointFor(skill: MantleSkillDef): string {
@@ -228,7 +228,7 @@ function endpointFor(skill: MantleSkillDef): string {
 }
 
 function txLink(txHash: Hex): string {
-  return `${MANTLE_EXPLORER.replace(/\/$/, "")}/tx/${txHash}`;
+  return `${CELO_EXPLORER.replace(/\/$/, "")}/tx/${txHash}`;
 }
 
 function json(res: ServerResponse, statusCode: number, body: unknown): void {

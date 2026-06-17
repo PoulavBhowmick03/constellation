@@ -186,7 +186,7 @@ function buildDigest(
   lines.push("");
   lines.push(`- **Lineage key:** \`${escapeTable(SPAWN_CONFIG.lineageKey)}\``);
   lines.push(`- **Generation:** \`${escapeTable(SPAWN_CONFIG.generation)}\``);
-  lines.push(`- **Contract:** [\`${SPAWN_CONFIG.contractAddress}\`](https://mantlescan.xyz/address/${SPAWN_CONFIG.contractAddress})`);
+  lines.push(`- **Contract:** [\`${SPAWN_CONFIG.contractAddress}\`](https://alfajores.celoscan.io/address/${SPAWN_CONFIG.contractAddress})`);
   lines.push(`- **Decision hash:** \`${SPAWN_CONFIG.decisionHash.slice(0, 14)}...\``);
   lines.push("");
   lines.push(runtime.settlementSection());

@@ -89,15 +89,15 @@ const PAGE_SIZES = ["5", "10", "3"] as const;
 const SORT_FIELDS = ["apr24h", "tvl", "volume24h"] as const;
 const skillRegistryClient = createPublicClient({
   chain: {
-    id: 5000,
-    name: "Mantle",
-    nativeCurrency: { name: "MNT", symbol: "MNT", decimals: 18 },
+    id: 44787,
+    name: "Celo Alfajores",
+    nativeCurrency: { name: "CELO", symbol: "CELO", decimals: 18 },
     rpcUrls: {
-      default: { http: ["https://rpc.mantle.xyz"] },
-      public: { http: ["https://rpc.mantle.xyz"] },
+      default: { http: ["https://alfajores-forno.celo-testnet.org"] },
+      public: { http: ["https://alfajores-forno.celo-testnet.org"] },
     },
   },
-  transport: http("https://rpc.mantle.xyz"),
+  transport: http("https://alfajores-forno.celo-testnet.org"),
 });
 const SKILL_REGISTRY_ABI = [
   {
@@ -510,7 +510,7 @@ async function runAlex(ctx: RoundContext): Promise<PersonaOutcome> {
         },
         paymentDetails: {
           scheme: "exact",
-          network: "eip155:5000",
+          network: "eip155:44787",
           maxAmountRequired: "200000",
           asset: USDC_ADDRESS,
           payTo: OPERATOR_ADDRESS,
