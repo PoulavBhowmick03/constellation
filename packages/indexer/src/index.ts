@@ -15,6 +15,7 @@ export {
   type TrackedToken,
 } from "./config.js";
 export { scanWallet } from "./scan.js";
+export { runwayInsights, revenueInsights, expenseInsights } from "./insights.js";
 export {
   registerWallet,
   getWalletById,

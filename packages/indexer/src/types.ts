@@ -50,10 +50,19 @@ export interface CounterpartyTotal {
   tx_refs: string[];
 }
 
+/** Additive Copilot advice attached to every report (see insights.ts). */
+export interface Insight {
+  severity: "info" | "watch" | "alert";
+  code: string;
+  title: string;
+  detail: string;
+}
+
 export interface RevenueReport {
   totals: Money[];
   by_counterparty: CounterpartyTotal[];
   tx_count: number;
+  insights: Insight[];
 }
 
 export interface ExpenseReport extends RevenueReport {
@@ -66,6 +75,7 @@ export interface RunwayReport {
   /** null when there is no gas history to extrapolate from. */
   runway_days: number | null;
   as_of: string;
+  insights: Insight[];
 }
 
 export const OKB: { token: "OKB"; decimals: 18 } = { token: "OKB", decimals: 18 };

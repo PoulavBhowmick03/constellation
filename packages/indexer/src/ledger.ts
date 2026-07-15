@@ -13,6 +13,7 @@ import {
   type RunwayReport,
   type TransferRow,
 } from "./types.js";
+import { expenseInsights, revenueInsights, runwayInsights } from "./insights.js";
 
 const MS_PER_DAY = 86_400_000;
 
@@ -88,11 +89,14 @@ export function computeRevenueReport(
   labels: Map<string, string> = new Map(),
 ): RevenueReport {
   const inflows = transfers.filter((t) => t.direction === "in" && inPeriod(t.blockTime, period));
-  return {
+  const report: RevenueReport = {
     totals: tokenTotalsToMoney(sumByToken(inflows)),
     by_counterparty: byCounterparty(inflows, labels),
     tx_count: inflows.length,
+    insights: [],
   };
+  report.insights = revenueInsights(report);
+  return report;
 }
 
 export function computeExpenseReport(
@@ -104,7 +108,7 @@ export function computeExpenseReport(
   const outflows = transfers.filter((t) => t.direction === "out" && inPeriod(t.blockTime, period));
   const gasInPeriod = gas.filter((g) => inPeriod(g.blockTime, period));
   const gasTotal = gasInPeriod.reduce((sum, g) => sum + BigInt(g.gasCost), 0n);
-  return {
+  const report: ExpenseReport = {
     totals: tokenTotalsToMoney(sumByToken(outflows)),
     by_counterparty: byCounterparty(outflows, labels),
     tx_count: outflows.length,
@@ -114,7 +118,10 @@ export function computeExpenseReport(
       decimals: OKB.decimals,
       tx_count: gasInPeriod.length,
     },
+    insights: [],
   };
+  report.insights = expenseInsights(report);
+  return report;
 }
 
 /**
@@ -145,12 +152,15 @@ export function computeRunway(
       Math.round((Number(BigInt(okbBalanceWei) * 1000n) / Number(avgDailyGas)) / 100) / 10;
   }
 
-  return {
+  const report: RunwayReport = {
     okb_balance: { token: OKB.token, amount: okbBalanceWei, decimals: OKB.decimals },
     avg_daily_gas_7d: { token: OKB.token, amount: avgDailyGas.toString(), decimals: OKB.decimals },
     runway_days: runwayDays,
     as_of: asOf.toISOString(),
+    insights: [],
   };
+  report.insights = runwayInsights(report);
+  return report;
 }
 
 // ---- Statement export ------------------------------------------------------
