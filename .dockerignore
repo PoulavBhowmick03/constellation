@@ -1,0 +1,14 @@
+# Keep the Docker build context lean: only the pnpm workspace is needed.
+**/node_modules
+**/dist
+.git
+.env
+**/*.log
+
+# Legacy LedgerForge dirs — harvest source, NOT part of the Constellation build.
+agents
+contracts
+dashboard
+facilitator
+indexer
+sdk

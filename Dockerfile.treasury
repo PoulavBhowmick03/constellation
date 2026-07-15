@@ -1,0 +1,21 @@
+# Treasury Copilot MCP server — built from the pnpm monorepo.
+# Build:  docker build -f Dockerfile.treasury -t treasury .
+# Deploy: fly deploy --config fly.treasury.toml
+FROM node:20-alpine AS build
+RUN npm i -g pnpm@10.30.3
+WORKDIR /repo
+COPY . .
+# Install everything, then build ONLY treasury + its workspace deps.
+RUN pnpm install --frozen-lockfile
+RUN pnpm --filter "@constellation/treasury..." build
+# Bundle treasury + its runtime deps into a standalone /app dir.
+RUN pnpm --filter @constellation/treasury --legacy deploy --prod /app
+
+FROM node:20-alpine AS runtime
+WORKDIR /app
+ENV NODE_ENV=production
+ENV TREASURY_PORT=7801
+COPY --from=build /app /app
+EXPOSE 7801
+# index.ts owns the listener (server.ts exports createApp).
+CMD ["node", "dist/index.js"]
