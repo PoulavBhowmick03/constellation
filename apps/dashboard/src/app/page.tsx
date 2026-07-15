@@ -8,6 +8,12 @@ import {
   type McpPaymentRequired,
 } from "./mcpClient";
 
+type Eip1193 = { request: (a: { method: string; params?: unknown[] }) => Promise<unknown> };
+declare global {
+  interface Window { ethereum?: Eip1193 }
+}
+const WALLET_KEY = "tc_wallet_id";
+
 type View = "treasury" | "kya" | "firm";
 type PaidTool = "get_revenue_report" | "get_expense_report" | "export_statement";
 type Format = "csv" | "json" | "md";
@@ -72,6 +78,8 @@ export default function Home() {
   const [format, setFormat] = useState<Format>("csv");
   const [receiptOpen, setReceiptOpen] = useState(false);
 
+  const [hasWallet, setHasWallet] = useState(false);
+
   const [activeAgent, setActiveAgent] = useState<keyof typeof mockAgentReports>("agent_good");
   const agentReport = mockAgentReports[activeAgent] as KyaReport;
 
@@ -80,6 +88,22 @@ export default function Home() {
   const [stepIndex, setStepIndex] = useState(0);
   const [playState, setPlayState] = useState<"idle" | "playing" | "paused">("idle");
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  // Restore a previously registered wallet_id and note browser-wallet availability.
+  useEffect(() => {
+    setHasWallet(typeof window !== "undefined" && !!window.ethereum);
+    const saved = typeof window !== "undefined" ? window.localStorage.getItem(WALLET_KEY) : null;
+    if (saved) {
+      setWalletId(saved);
+      void fetchRunway(saved);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Persist the working wallet_id so a refresh keeps the session.
+  useEffect(() => {
+    if (walletId && typeof window !== "undefined") window.localStorage.setItem(WALLET_KEY, walletId);
+  }, [walletId]);
 
   useEffect(() => {
     setStepIndex(0);
@@ -105,6 +129,50 @@ export default function Home() {
       if (timerRef.current) clearInterval(timerRef.current);
     };
   }, [playState, scenario.steps.length]);
+
+  // One-click path: connect a browser wallet, sign the challenge in-wallet, register.
+  async function connectAndRegister() {
+    const eth = typeof window !== "undefined" ? window.ethereum : undefined;
+    if (!eth) {
+      setError("No browser wallet detected. Install MetaMask or OKX Wallet, or use the manual flow below.");
+      return;
+    }
+    setBusy("connect");
+    setError(null);
+    try {
+      const accounts = (await eth.request({ method: "eth_requestAccounts" })) as string[];
+      const addr = accounts?.[0];
+      if (!addr) throw new Error("Wallet returned no account");
+      setAddress(addr);
+
+      const chRes = await callTreasuryTool<RegistrationChallenge | { error: unknown }>("register_wallet", { address: addr });
+      if (chRes.kind === "payment_required") throw new Error("register_wallet unexpectedly requested payment.");
+      const e1 = readToolError(chRes.data);
+      if (e1) throw new Error(e1);
+      if (!isRegistrationChallenge(chRes.data)) throw new Error("Unexpected challenge shape");
+      setChallenge(chRes.data.challenge);
+
+      const sig = (await eth.request({ method: "personal_sign", params: [chRes.data.challenge.message, addr] })) as string;
+      setSignature(sig);
+
+      const regRes = await callTreasuryTool<RegistrationResult | { error: unknown }>("register_wallet", {
+        address: addr,
+        nonce: chRes.data.challenge.nonce,
+        signature: sig,
+      });
+      if (regRes.kind === "payment_required") throw new Error("register_wallet unexpectedly requested payment.");
+      const e2 = readToolError(regRes.data);
+      if (e2) throw new Error(e2);
+      if (!isRegistrationResult(regRes.data)) throw new Error("Unexpected registration shape");
+      setRegistration(regRes.data);
+      setWalletId(regRes.data.wallet_id);
+      await fetchRunway(regRes.data.wallet_id);
+    } catch (err) {
+      setError(errorMessage(err));
+    } finally {
+      setBusy(null);
+    }
+  }
 
   async function requestChallenge() {
     if (!/^0x[0-9a-fA-F]{40}$/.test(address.trim())) {
@@ -232,6 +300,7 @@ export default function Home() {
                   address, setAddress, challenge, signature, setSignature, registration, walletId, setWalletId,
                   runway, busy, paidProbes, format, setFormat, dashOffset, runwayDays,
                   requestChallenge, submitRegistration, fetchRunway, probePaidTool, setReceiptOpen,
+                  connectAndRegister, hasWallet,
                 }}
               />
             )}
@@ -331,6 +400,7 @@ type TreasuryProps = {
   format: Format; setFormat: (f: Format) => void; dashOffset: number; runwayDays: number | null;
   requestChallenge: () => void; submitRegistration: () => void; fetchRunway: (id?: string) => void;
   probePaidTool: (t: PaidTool) => void; setReceiptOpen: (v: boolean) => void;
+  connectAndRegister: () => void; hasWallet: boolean;
 };
 
 function TreasuryView(p: TreasuryProps) {
@@ -353,6 +423,9 @@ function TreasuryView(p: TreasuryProps) {
               <p className="text-label-sm text-on-surface-variant uppercase tracking-wider mb-1">Wallet ID</p>
               <p className="font-data-mono text-data-mono text-on-surface break-all">
                 {p.registration?.wallet_id ?? (p.walletId || "—")}
+                {(p.registration?.wallet_id ?? p.walletId) && (
+                  <span className="ml-2 inline-block"><CopyButton text={p.registration?.wallet_id ?? p.walletId} /></span>
+                )}
               </p>
               {p.registration && (
                 <p className="text-label-sm text-on-surface-variant mt-1">indexed from block {p.registration.indexed_from_block}</p>
@@ -419,6 +492,23 @@ function TreasuryView(p: TreasuryProps) {
   );
 }
 
+function CopyButton({ text }: { text: string }) {
+  const [copied, setCopied] = useState(false);
+  return (
+    <button
+      onClick={() => {
+        navigator.clipboard?.writeText(text);
+        setCopied(true);
+        setTimeout(() => setCopied(false), 1200);
+      }}
+      title="Copy"
+      className="text-on-surface-variant hover:text-primary transition-colors align-middle"
+    >
+      <span className="material-symbols-outlined text-[15px]">{copied ? "check" : "content_copy"}</span>
+    </button>
+  );
+}
+
 const INSIGHT_STYLE: Record<Insight["severity"], { icon: string; ring: string; text: string }> = {
   alert: { icon: "warning", ring: "border-error/40 bg-error/5", text: "text-error" },
   watch: { icon: "info", ring: "border-secondary/40 bg-secondary/5", text: "text-secondary" },
@@ -467,9 +557,24 @@ function RegisterPanel(p: TreasuryProps) {
         <span className="text-label-sm text-primary uppercase tracking-wider">Free · EIP-191</span>
       </div>
       <p className="text-body-md text-on-surface-variant mb-4">
-        No custody, no connect. Request a challenge, sign it in your own wallet, and register — every value on this
-        page then comes from the live endpoint.
+        No custody. Prove ownership with a signature — every value on this page then comes from the live endpoint.
       </p>
+
+      {/* One-click path */}
+      <button
+        onClick={p.connectAndRegister}
+        disabled={p.busy !== null}
+        className="w-full mb-4 bg-primary-container hover:bg-primary text-on-primary-container text-body-md font-medium py-3 rounded-lg transition-colors disabled:opacity-40 flex items-center justify-center gap-2"
+      >
+        <span className="material-symbols-outlined text-[20px]">account_balance_wallet</span>
+        {p.busy === "connect" ? "Check your wallet…" : p.hasWallet ? "Connect wallet & register" : "Connect a browser wallet to register"}
+      </button>
+
+      <details className="mb-3 group">
+        <summary className="text-label-sm text-on-surface-variant uppercase tracking-wider cursor-pointer hover:text-on-surface select-none">
+          Or register manually (paste a signature)
+        </summary>
+        <div className="mt-3">
 
       <div className="grid sm:grid-cols-2 gap-3 mb-3">
         <input
@@ -505,6 +610,8 @@ function RegisterPanel(p: TreasuryProps) {
           </div>
         </div>
       )}
+        </div>
+      </details>
 
       <div className="flex items-center gap-3 mt-1">
         <input
@@ -539,7 +646,10 @@ function SettlementShowcase({ onOpen }: { onOpen: () => void }) {
         </div>
         <div className="flex justify-between items-center text-body-md">
           <span className="text-on-surface-variant">Tx</span>
-          <span className="font-data-mono text-[11px] text-on-surface bg-surface-container-low px-2 py-1 rounded">{truncate(latest.tx)}</span>
+          <span className="flex items-center gap-1.5">
+            <span className="font-data-mono text-[11px] text-on-surface bg-surface-container-low px-2 py-1 rounded">{truncate(latest.tx)}</span>
+            <CopyButton text={latest.tx} />
+          </span>
         </div>
       </div>
       <button onClick={onOpen} className="w-full bg-primary-container hover:bg-primary text-on-primary-container text-label-sm py-2.5 rounded-lg transition-colors flex items-center justify-center gap-2">
