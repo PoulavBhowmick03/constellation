@@ -13,6 +13,30 @@ const periodShape = z
   .optional()
   .default({});
 
+/**
+ * Cheap preconditions checked BEFORE settlement so a paid call is never charged
+ * when it cannot be fulfilled. Returns a ToolError-shaped object to return
+ * verbatim (matching the handler's own errors), or null to proceed to charging.
+ */
+async function precheckPaidCall(
+  deps: TreasuryDeps,
+  tool: string,
+  args: Record<string, unknown>,
+): Promise<{ error: { code: string; message: string } } | null> {
+  if (tool === "export_statement" && !["csv", "json", "md"].includes(String(args.format))) {
+    return { error: { code: "BAD_REQUEST", message: "format must be csv | json | md" } };
+  }
+  const walletId = args.wallet_id;
+  if (typeof walletId !== "string" || walletId.length === 0) {
+    return { error: { code: "BAD_REQUEST", message: "wallet_id is required" } };
+  }
+  const wallet = await deps.ledger.getWalletById(walletId);
+  if (!wallet) {
+    return { error: { code: "WALLET_NOT_FOUND", message: `unknown wallet_id "${walletId}"` } };
+  }
+  return null;
+}
+
 /** Flatten express headers into the PaymentContext shape the adapter reads. */
 function paymentCtx(req: Request): PaymentContext {
   const headers: Record<string, string | undefined> = {};
@@ -108,28 +132,55 @@ export function createApp(deps: TreasuryDeps): express.Express {
   const app = express();
   app.use(express.json());
 
+  const PAID_TOOLS = ["get_revenue_report", "get_expense_report", "export_statement"];
+
   app.post("/mcp", async (req: Request, res: Response, next: express.NextFunction) => {
     try {
-      if (req.body?.method === "tools/call" && req.body.params?.name) {
+      if (req.body?.method === "tools/call" && PAID_TOOLS.includes(req.body.params?.name)) {
         const tool = req.body.params.name;
-        if (["get_revenue_report", "get_expense_report", "export_statement"].includes(tool)) {
-          const ctx = paymentCtx(req);
-          const payRes = await deps.payments.requirePayment(tool, ctx);
-          if (payRes.status === "payment_required") {
-            // Must return HTTP 402 with the exact x402 header
-            res.status(402)
-               .header(X402_HEADERS.paymentRequired, encodePaymentRequired(payRes.challenge as any))
-               .json({
-                 jsonrpc: "2.0",
-                 id: req.body.id,
-                 error: { code: -32000, message: `payment required for "${tool}"` }
-               });
-            return;
-          } else {
-            // Attach the successful receipt so handlers can wrap it in the MCP response
-            (req as any).paymentSettlement = { preflightResult: payRes, settlement: { paymentResponse: (payRes as any).paymentResponse } };
-          }
+        const args = (req.body.params.arguments ?? {}) as Record<string, unknown>;
+
+        // Precondition checks BEFORE any settlement — never charge for a request
+        // we cannot fulfil. Covers the common charge-without-result cases (unknown
+        // wallet, bad export format). Deeper crash-safety needs a durable receipt
+        // store (see docs/status/P1.md) and is tracked separately.
+        const precheck = await precheckPaidCall(deps, tool, args);
+        if (precheck) {
+          res.json({ jsonrpc: "2.0", id: req.body.id, result: asContent(precheck) });
+          return;
         }
+
+        const ctx = paymentCtx(req);
+        const payRes = await deps.payments.requirePayment(tool, ctx);
+        if (payRes.status === "payment_required") {
+          // Only emit the standard x402 PAYMENT-REQUIRED header for a real x402 v2
+          // challenge (array `accepts`). A mock-mode challenge carries a string
+          // `accepts` and no x402Version — encoding that as x402 would ship a
+          // structurally-invalid header, so mock 402s stay in the JSON-RPC body.
+          const ch = payRes.challenge as Record<string, unknown> | undefined;
+          const isRealX402 = ch?.x402Version === 2 && Array.isArray(ch.accepts);
+          if (isRealX402) {
+            res.header(X402_HEADERS.paymentRequired, encodePaymentRequired(ch as never));
+          }
+          res.status(402).json({
+            jsonrpc: "2.0",
+            id: req.body.id,
+            error: { code: -32000, message: `payment required for "${tool}"`, data: { payment: ch } },
+          });
+          return;
+        }
+        // Set the standard x402 PAYMENT-RESPONSE HTTP header so an unmodified OKX
+        // client can reconcile settlement via its normal path — in addition to the
+        // MCP content block (below) for MCP-aware buyers. Set before the transport
+        // writes the response so it persists on the 200.
+        if (payRes.paymentResponse) {
+          res.header(X402_HEADERS.paymentResponse, payRes.paymentResponse);
+        }
+        // Attach the settled receipt so the handler can echo PAYMENT-RESPONSE.
+        (req as unknown as { paymentSettlement?: unknown }).paymentSettlement = {
+          preflightResult: payRes,
+          settlement: { paymentResponse: payRes.paymentResponse },
+        };
       }
       next();
     } catch (err) {

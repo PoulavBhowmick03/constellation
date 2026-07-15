@@ -143,7 +143,12 @@ export class SdkPaymentAdapter implements PaymentAdapter {
     let validated: ValidatedPayload;
     try {
       const payload = decodePaymentPayload(header.value);
-      validated = validateExactPayload(payload, paymentRequirements(challenge), this.now());
+      validated = validateExactPayload(
+        payload,
+        paymentRequirements(challenge),
+        this.now(),
+        challenge.resource.url,
+      );
     } catch (error) {
       return challengeResult(price, challenge, paymentError(error));
     }
@@ -172,7 +177,10 @@ export class SdkPaymentAdapter implements PaymentAdapter {
       }
 
       const settled = await this.processor.settlePayment(validated.payload, requirements);
-      if (isTxHash(settled.transaction)) this.rememberNonce(validated.nonceKey);
+      // Consume the nonce ONLY on a fully-confirmed settlement. A pending/timeout
+      // settle can carry a tx hash that never confirms; remembering it here would
+      // poison the nonce and block a legitimate retry while the buyer is (maybe)
+      // charged — so pending/timeout stays retryable and is never remembered.
       if (
         !settled.success ||
         settled.status !== "success" ||
@@ -252,9 +260,21 @@ function validateExactPayload(
   payload: PaymentPayload,
   requirements: PaymentRequirements,
   nowMs: number,
+  expectedResourceUrl: string,
 ): ValidatedPayload {
   if (!isRecord(payload) || payload.x402Version !== 2) {
     throw new Error("payment must use x402Version 2");
+  }
+  // Tool binding: EIP-3009 signs only {from,to,value,nonce,validity}, so a proof
+  // for one tool is otherwise fungible across any equal-priced tool (e.g.
+  // get_revenue_report and get_expense_report both cost 0.10). When the payload
+  // echoes the resource it was issued for, require it to match THIS tool's
+  // challenge so a compliant client's proof can't be redirected to another tool.
+  // (Absent resource falls back to price/payTo binding; a malicious buyer can at
+  // most redirect their own single-use payment to another same-priced tool.)
+  const declaredResource = isRecord(payload.resource) ? payload.resource.url : undefined;
+  if (typeof declaredResource === "string" && declaredResource !== expectedResourceUrl) {
+    throw new Error("payment resource does not match the requested tool");
   }
   if (!isRecord(payload.accepted)) throw new Error("payment is missing accepted terms");
   const accepted = payload.accepted;

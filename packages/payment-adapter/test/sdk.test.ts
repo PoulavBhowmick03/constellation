@@ -21,6 +21,8 @@ const NONCE = `0x${"34".repeat(32)}`;
 const prices: PriceTable = {
   get_runway: null,
   get_revenue_report: { token: "USDT", amount: "100000", decimals: 6 },
+  // Same price as revenue on purpose — the tool-binding test relies on it.
+  get_expense_report: { token: "USDT", amount: "100000", decimals: 6 },
 };
 
 class RecordingProcessor implements ExactPaymentProcessor {
@@ -187,6 +189,39 @@ describe("SdkPaymentAdapter inbound exact flow", () => {
     const result = await adapter.requirePayment("get_revenue_report", header(signedPayload()));
     expect(result.status).toBe("payment_required");
     expect(result.paymentResponse).toBeUndefined();
+  });
+
+  it("does not poison the nonce on a pending/timeout settle (stays retryable)", async () => {
+    // A timeout settle can carry a tx hash that never confirms. The nonce must
+    // NOT be consumed, so a later retry (once the facilitator confirms) can pass.
+    const payment = header(signedPayload());
+    processor.settlePayment.mockResolvedValueOnce({
+      success: true,
+      status: "timeout",
+      payer: PAYER,
+      transaction: TX,
+      network: TREASURY_X402.network,
+    });
+    const first = await adapter.requirePayment("get_revenue_report", payment);
+    expect(first.status).toBe("payment_required");
+    // Retry with the SAME payment must not be rejected as "already submitted" —
+    // the default mock now returns success, so the retry settles cleanly.
+    const retry = await adapter.requirePayment("get_revenue_report", payment);
+    expect(retry.status).toBe("paid");
+    expect(processor.settlePayment).toHaveBeenCalledTimes(2);
+  });
+
+  it("rejects a revenue-issued proof replayed to the equal-priced expense tool", async () => {
+    // signedPayload() builds a proof for get_revenue_report (resource
+    // mcp://tool/get_revenue_report). Presenting it to get_expense_report — same
+    // price, same payTo/asset — must be rejected on the resource binding, never
+    // settled.
+    const revenueProof = header(signedPayload());
+    const result = await adapter.requirePayment("get_expense_report", revenueProof);
+    expect(result.status).toBe("payment_required");
+    expect(result.challenge?.reason).toMatch(/resource does not match/);
+    expect(processor.verifyPayment).not.toHaveBeenCalled();
+    expect(processor.settlePayment).not.toHaveBeenCalled();
   });
 
   it("rejects replay of a successfully settled nonce", async () => {
