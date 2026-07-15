@@ -1,80 +1,126 @@
-# Constellation
+# Treasury Copilot
 
-ASPs for the OKX.AI Genesis Hackathon (July 3 to 17, 2026). The primary submission is **Treasury Copilot**, one tight, fully-shipped, listed-early A2MCP service. KYA is a conditional fast-follow; The Firm is demo narrative, not a build target. This ordering is deliberate and is the result of descoping a three-ASP plan that was over-scoped for a two-person, 11-day window.
+**On-chain bookkeeping for agent businesses — non-custodial, pay-per-call, live on X Layer.**
 
-| Entry | Codename | Type | Status (as of Jul 15, eve) | Primary tracks |
-|---|---|---|---|---|
-| C | **Treasury Copilot** | A2MCP | **THE SUBMISSION. LIVE at `https://constellationokx.fly.dev/mcp`, `PAYMENT_MODE=sdk`. A real x402 settlement is CONFIRMED on-chain — tx `0xceaab66…`, 0.10 USD₮0 buyer→treasury on X Layer. Money path hardened after two Codex reviews (durable settlement store, timeout polling, tool-binding, precheck-before-charge); revenue math verified on live data; 90 tests green; dashboard wired to the live free path. Remaining: redeploy hardened code + `fly scale count 1`, activate Agent 5863, demo + form.** | Finance Copilot, Best Product, Revenue Rocket (upside) |
-| B | **KYA: Know Your Agent** | A2MCP | Conditional fast-follow (only if Treasury is live+approved with slack — gate G2). Fixture-only: scoring core + handlers + 15 tests; no live-chain collector, no MCP transport. Open scoring reconciliation before listing. ZK deferred to writeup. | Creative Genius, Finance Copilot |
-| A | **The Firm** | A2A | Narrative only. DORMANT (uv stub only). A slide and a vision, not a listed deliverable, unless everything else is done early. | (story for Creative Genius) |
+Autonomous agents are starting to earn and spend real money on-chain, and almost none of them
+can answer a basic question their human operators need answered: *how much did I make this week,
+who paid me, what did gas cost, and how long until I run out?* Treasury Copilot answers exactly
+that. It reads a wallet's on-chain history and returns clean revenue, expense, gas, and runway
+reports — the way a bookkeeper would, but as a service another agent can call and pay for per
+request.
 
-> **⚠️ Repo-split note (Jul 15):** the working Treasury implementation (real x402 `payment-adapter`, live deploy, 77 tests) currently lives on the `migrate/celo` lineage (this tree), which has **no shared git history** with `origin/main` (constellation.git). `origin/main` separately holds `packages/mocks`, `tests/` golden evals, and `apps/dashboard` (I2/AG1 work) but an **older mock-only** `payment-adapter`/`treasury`. These two lineages must be reconciled onto one main — see `docs/status/P1.md`.
+- **Live endpoint (A2MCP):** `https://constellationokx.fly.dev/mcp`
+- **OKX Agent ID:** `5863`
+- **Network:** X Layer (`eip155:196`)
+- **Settlement asset:** USD₮0 — `0x779Ded0c9e1022225f8E0630b35a9b54bE713736`
+- **Payments:** x402 `exact` scheme over EIP-3009, settled by OKX's hosted facilitator
+- **Custody:** none — the service never holds a key or your funds
 
-## Why this ordering (read before touching the plan)
+---
 
-Two AI reviews and a primary-source check of the OKX ASP onboarding flow converged on one message: **one thing shipped and actually used beats three things half-built.** The failure mode we are avoiding is the classic two-person hackathon over-scope that ends with one demo-able slice, one broken dependency, and one stub, with no clean live demo and a listing that never passed review.
+## What it does
 
-Treasury Copilot is the keystone (not KYA) because:
-- It is the simplest to ship: a read-only indexer port, no scoring model, no ZK, no A2A escrow.
-- It has the only real in-window usage story. Its customers are the other hackathon teams, all of whom have unaccounted agent revenue right now, reachable in the OKX builder channels. Usage drives Revenue Rocket and category signal; nothing else we could build gets called in time.
-- It is A2MCP: settled per call, **no arbitration, no dispute exposure** (arbitration is A2A-only on this platform).
-- It is the listing-review probe anyway, so listing it first costs nothing extra.
+Treasury Copilot is an **A2MCP service**: a Model Context Protocol server that another agent
+connects to, discovers tools on, and pays to use. It exposes five tools.
 
-KYA is more differentiated and more interesting, but it is a harder ship and its usage depends on marketplace volume that does not exist yet in week two. It earns its slot only as a fast-follow once the primary is safe.
+| Tool | Price | What you get |
+|---|---|---|
+| `register_wallet` | Free | Prove you own a wallet via an EIP-191 signature challenge; get a `wallet_id`. |
+| `get_runway` | Free | Native OKB balance, average daily gas over the trailing 7 days, and estimated days of runway. |
+| `get_revenue_report` | 0.10 USD₮0 | Incoming USDT/USDG totals for a period, grouped and ranked by counterparty (with labels). |
+| `get_expense_report` | 0.10 USD₮0 | Outgoing totals by counterparty plus total OKB gas for the period. |
+| `export_statement` | 0.20 USD₮0 | A full statement of transfers + gas for a period as CSV, JSON, or Markdown. |
 
-## Products
+The two free tools are the hook: any agent can register and check its runway at no cost. The paid
+tools are where the real bookkeeping lives, and each paid call settles on-chain before the report
+is returned.
 
-**Treasury Copilot (the submission).** Read-only bookkeeping for agent businesses: revenue/expense/gas reports tagged by counterparty, runway estimates, exportable statements. Reuses the LedgerForge indexer. Strictly read-only and non-custodial, which is also the fastest path through listing review.
+## How payment works
 
-**KYA (conditional fast-follow).** Trust checks before hiring: ERC-8004 reputation reads, an ERC-721 identity-transfer continuity flag (reputation that changed wallets), sybil/feedback-graph forensics, an explainable 0 to 100 score. The zkML attestation tier (CredAttest EZKL pipeline) is **deferred to the writeup as a roadmap item with a working proof link**, not shipped in the listing. Judges in a 290+ submission hackathon will not inspect a ZK circuit during review; the differentiation must be the explainable score and the identity-transfer flag, not the proof.
+A paid tool answers an unpaid call with an HTTP **402** carrying a standard x402
+`PAYMENT-REQUIRED` challenge: the price, the asset, the recipient, and an EIP-3009
+`transferWithAuthorization` to sign. The caller's agent signs it and replays the request with the
+signed authorization. From there, OKX's **hosted facilitator** verifies the signature, submits the
+transfer on X Layer, and waits for confirmation; only then does the tool return its result, along
+with a `PAYMENT-RESPONSE` receipt (both as an HTTP header and an MCP content block) that carries
+the on-chain transaction hash.
 
-**The Firm (narrative).** The orchestrator that hires agents, runs KYA before each hire, and returns a provenance appendix. Kept as the vision that frames the demo and the X post. Not a listed A2A deliverable unless Treasury and KYA are both done and clean with days to spare.
+Two properties matter and are enforced end to end:
 
-## Platform facts (verified from the OKX ASP tutorial, correcting earlier assumptions)
+- **Non-custodial.** Payment moves directly from the caller to the treasury wallet via EIP-3009.
+  Treasury Copilot holds no private key, never takes custody, and pays no gas — the facilitator
+  does. There is no transaction-sending code anywhere in the product except the payment adapter.
+- **Exactly-once, delivered.** Every settlement is recorded in a durable Postgres receipt store
+  keyed by `payer:nonce:tool`, so a retried or duplicated request recovers the original result
+  instead of paying twice, a settlement that confirms after a network timeout is still delivered
+  (the server polls the facilitator's settle-status), and a proof bought for one tool can never be
+  redirected to another.
 
-- Registration is agent-prompt-driven through **Onchain OS** (`npx skills add okx/onchainos-skills`), logged into the **Agentic Wallet** with email. The primary identity is **OKX Agent Identity**, not a bring-your-own ERC-8004 identity. The **Agent ID** required by the submission form is issued during registration/listing and appears in the agent conversation window; capture it then.
-- Paid A2MCP endpoints must be **x402-compliant**; the OKX Payment SDK is *recommended, not required*. This is directly in scope of the team's LedgerForge x402 experience and is the main reason the payment integration is lower-risk for this team than for most.
-- **A2MCP has no arbitration and no dispute path.** It settles instantly per call. Arbitration, the 5% bounty deposit, and on-chain ratings are **A2A-only**. Treasury and KYA therefore never touch the evaluator network.
-- Review runs within 24 hours of listing, result sent to the wallet email and the agent window.
+### Proven live
+
+Two real payments have settled on-chain against the live endpoint:
+
+- `0xceaab66465959a25680c1efe6b37d71f0afea6cd115fd90a130288982280cc2b`
+- `0x87f8674c5e53b754ea20b71a67972c2b49f1033530af7fd20c89d58a55a2617d`
+
+Each moved 0.10 USD₮0 from a buyer wallet to the treasury and returned a signed receipt.
+
+## Quickstart (calling the service)
+
+```
+POST https://constellationokx.fly.dev/mcp
+Accept: application/json, text/event-stream
+Content-Type: application/json
+
+{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}
+```
+
+1. **Register** — call `register_wallet` with `{ address }`, sign the returned EIP-191 message,
+   call again with `{ address, nonce, signature }`, and keep the `wallet_id`.
+2. **Free reports** — call `get_runway` with your `wallet_id`.
+3. **Paid reports** — call `get_revenue_report`/`get_expense_report`/`export_statement`. You'll get
+   a 402; pay it via any x402 client (e.g. OKX's `onchainos payment pay`), then replay the call
+   with the returned authorization header to receive the report and the settlement receipt.
 
 ## Architecture
 
 ```
 constellation/
   packages/
-    indexer/          X Layer chain indexer (port of LedgerForge indexer)   [BUILT - X Layer port, 8/8 tests; aggregators hand-verified on live chain]
-    erc8004/          ERC-8004 registry readers, chain-agnostic EVM (port)   [BUILT - identity client + reputation stub, 4/4 tests]
-    zk/               EZKL pipeline (port of CredAttest tooling)             [NOT BUILT - deferred to writeup proof only]
-    swarm-utils/      Coordinator/state glue harvested from Spawn            [NOT BUILT - dormant, only if The Firm is built]
-    payment-adapter/  THIN wrapper around x402 endpoint (OKX SDK optional)   [BUILT - real OKX x402 sdk mode LIVE (exact/EIP-3009, non-custodial via OKX facilitator); mock default; 33 tests]
-    mocks/            Mock MCP server + golden fixtures per INTERFACES.md     [BUILT on origin/main lineage; NOT in this tree - see repo-split note]
+    indexer/          X Layer chain indexer + ledger math (USDT/USDG transfers, gas, balances,
+                      runway); Postgres schema + migrations; the settlement receipt store.
+    payment-adapter/  The only code that touches payments. x402 challenge building, the OKX
+                      facilitator adapter (verify + settle + timeout polling), the durable
+                      SettlementStore, and a mock adapter for tests. Nothing else imports an SDK.
+    erc8004/          ERC-8004 registry read clients (identity + reputation) for the KYA roadmap.
   apps/
-    treasury/         THE SUBMISSION. MCP server. TypeScript.                [LIVE + DEPLOYED - real x402 charging; 17 tests; facilitator verify proven on-chain]
-    kya/              Conditional. MCP server + scoring engine. TypeScript.  [FIXTURE-ONLY - scoring core + handlers + 15 tests; no live reads/transport]
-    firm/             Narrative only. LangGraph app. Python.                 [DORMANT - uv stub only]
-    dashboard/        Optional read-only demo viewer.                        [BUILT on origin/main lineage; NOT in this tree - see repo-split note]
-  docs/
-    INTERFACES.md     Tool schemas. Treasury + KYA sections are law; Firm section is deferred.
-    PLAN.md           Day-by-day plan around Treasury-as-keystone.
-    PROMPTS.md        Kickoff prompts. I1 (The Firm) is dormant until explicitly activated.
-    status/           Per-agent session logs.
-  CLAUDE.md / AGENTS.md   Rules + role briefs.
+    treasury/         The product. A stateless MCP server (Express + Streamable HTTP) exposing the
+                      five tools, the EIP-191 registration flow, and the x402 payment preflight.
+    dashboard/        A read-only demo viewer wired to the live endpoint (free-tool path).
+    kya/              Roadmap: an agent trust-scoring service (fixture-only today).
 ```
 
-Stack: pnpm workspaces + TypeScript + viem; Postgres via docker compose; ezkl + Foundry only if the ZK proof is built for the writeup demo. Deploy: Fly.io.
+Stack: TypeScript (strict) · pnpm workspaces · viem · Postgres · Model Context Protocol · deployed
+on Fly.io. Money math and payment logic are unit-tested; the suite runs on every package.
 
-## Harvest, don't port
+## Principles
 
-Reuse components, never repositories. LedgerForge indexer retargets to X Layer (the keystone reuse). ERC-8004 readers port if KYA proceeds. The x402 facilitator is **shelved** (x402-compliant endpoint is what's needed, not a whole facilitator). CredAttest EZKL tooling is used only to produce the roadmap proof, not the listed product. Spawn glue stays dormant.
+- **Read-only and non-custodial.** The service reads chain data and settles payments through OKX's
+  facilitator. It never sends a transaction of its own and never holds funds.
+- **No invented facts.** Contract addresses, RPC endpoints, and SDK behavior are verified on-chain
+  or against the SDK, or they are configuration — never guessed.
+- **No wash trading.** Usage is real external calls; the repo never scripts the service paying its
+  own tools to inflate numbers.
 
-## Hard rules
+## Roadmap
 
-- INTERFACES.md Treasury and KYA sections are law after D1 freeze. Changes need both humans' sign-off plus a same-PR mocks update.
-- Treasury and KYA are read-only and non-custodial. No transaction-sending code outside `packages/payment-adapter` and (only if built) the one Foundry verifier-deploy script.
-- No secrets in code; `.env.example` documents every variable.
-- Unverified facts are `TODO(unverified)` + an unknowns-register entry, never invented.
-- **Wash-trading rule:** no scripted self-calls to pump usage numbers. Real external calls only.
+Treasury Copilot is the first of three services in the Constellation project. **KYA (Know Your
+Agent)** scores an agent's trustworthiness before you hire it — ERC-8004 reputation reads, an
+identity-transfer continuity flag, and sybil-graph forensics, with an explainable 0–100 score.
+**The Firm** is the vision that ties them together: an orchestrator that hires agents, runs KYA
+before every hire, pays via x402, and returns a provenance appendix. Treasury ships first because
+it is the simplest to prove, the easiest to actually use in-market, and the natural probe for
+everything that follows.
 
-## Prize logic, honestly
-
-Best Product, Finance Copilot, and Creative Genius are judged on quality and fit, which we control. Revenue Rocket is upside from Treasury's cohort demand, never a target. Social Buzz is dry for this content; if pursued, it needs a hook, not just technical posts. The listing gate is the real deadline; an unapproved ASP is an invalid submission.
+Planning and interface contracts live in `docs/PLAN.md` and `docs/INTERFACES.md`; per-workstream
+status in `docs/status/`.
