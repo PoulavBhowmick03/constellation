@@ -293,12 +293,8 @@ export const mockAgentReports: Record<string, KyaReport> = {
     ],
     as_of: "2026-07-15T12:00:00.000Z",
     zk: {
-      available: true,
-      proof: "0x3434343434343434343434343434343434343434343434343434343434343434",
-      public_inputs: ["62", "12", "44"],
-      model_commitment: "0x1212121212121212121212121212121212121212121212121212121212121212",
-      verifier: { chain: "eip155:196", address: "0x000000000000000000000000000000000000238c" },
-      scheme: "groth16-bn254-ezkl",
+      available: false,
+      reason: "roadmap",
     }
   },
   agent_transferred_identity: {
@@ -498,21 +494,16 @@ export const firmScenarios: SimulationScenario[] = [
       },
       {
         nodeId: "procure",
-        title: "Procurement & Payment Escrow",
-        description: "Trigger A2MCP tool call with pre-payment. Cost: 1.50 USDT. Executed successfully.",
+        title: "Illustrative Procurement Decision",
+        description: "Preview where a future orchestrator would request payment approval. No call or transaction is executed.",
         status: "idle",
-        log: `[00:19] Initializing payment challenge...
-[00:20] Required Payment: 1.50 USDT. Status: APPROVED.
-[00:22] A2MCP payload dispatched with x402 headers.
-[00:25] Receipt received. Tx Ref: 0xproc_happy_01. Status: RELEASED.`,
+        log: `[SIMULATION] Payment decision point reached.
+[SIMULATION] No payment authorization created.
+[SIMULATION] No A2MCP payload dispatched.
+[SIMULATION] No transaction or receipt exists.`,
         data: {
-          receipt: {
-            subtask_id: "st_01",
-            vendor: { name: "Agent Good", agent_id: 42 },
-            cost: { token: "USDT", amount: "1500000", decimals: 6 },
-            tx_ref: "0xproc_happy_01",
-            status: "released"
-          }
+          simulation_only: true,
+          receipt: null,
         }
       },
       {
@@ -554,9 +545,7 @@ export const firmScenarios: SimulationScenario[] = [
       hires: [
         { subtask_id: "st_01", vendor: { name: "Agent Good", agent_ref: { kind: "erc8004", chain: "eip155:8453", agent_id: 42 } }, kya_summary: { score: 85, flags: [] } }
       ],
-      receipts: [
-        { subtask_id: "st_01", vendor: { name: "Agent Good" }, mode: "a2mcp", tool: "research_rates", cost: { token: "USDT", amount: "1500000", decimals: 6 }, tx_ref: "0xproc_happy_01", status: "released" }
-      ],
+      receipts: [],
       qa: [
         { subtask_id: "st_01", criteria_passed: 5, criteria_total: 5, notes: "All bridge rate checks verified." }
       ],
