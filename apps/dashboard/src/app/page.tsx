@@ -15,11 +15,13 @@ type Format = "csv" | "json" | "md";
 type RegistrationChallenge = { challenge: { nonce: string; message: string; expires_in_seconds: number } };
 type RegistrationResult = { ok: true; wallet_id: string; indexed_from_block: number };
 type AtomicAmount = { token?: string; amount: string; decimals: number };
+type Insight = { severity: "info" | "watch" | "alert"; code: string; title: string; detail: string };
 type RunwayResult = {
   okb_balance: AtomicAmount;
   avg_daily_gas_7d: AtomicAmount;
   runway_days: number | null;
   as_of: string;
+  insights?: Insight[];
 };
 type PaidProbe =
   | { kind: "payment_required"; challenge: McpPaymentRequired }
@@ -399,6 +401,9 @@ function TreasuryView(p: TreasuryProps) {
         </div>
       </section>
 
+      {/* Copilot insights — live from the free get_runway response */}
+      <InsightsPanel insights={p.runway?.insights ?? []} hasRunway={p.runway !== null} />
+
       {/* Register + settlement showcase row */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <RegisterPanel {...p} />
@@ -411,6 +416,46 @@ function TreasuryView(p: TreasuryProps) {
         <ExportPanel {...p} />
       </div>
     </>
+  );
+}
+
+const INSIGHT_STYLE: Record<Insight["severity"], { icon: string; ring: string; text: string }> = {
+  alert: { icon: "warning", ring: "border-error/40 bg-error/5", text: "text-error" },
+  watch: { icon: "info", ring: "border-secondary/40 bg-secondary/5", text: "text-secondary" },
+  info: { icon: "auto_awesome", ring: "border-primary/25 bg-primary-container/5", text: "text-primary" },
+};
+
+function InsightsPanel({ insights, hasRunway }: { insights: Insight[]; hasRunway: boolean }) {
+  return (
+    <section className="glass-panel rounded-xl p-card-padding">
+      <div className="flex items-center gap-2 mb-4">
+        <span className="material-symbols-outlined text-primary">auto_awesome</span>
+        <h2 className="font-headline-md text-headline-md">Copilot insights</h2>
+        <span className="text-label-sm text-on-surface-variant uppercase tracking-wider ml-1">from live data</span>
+      </div>
+      {insights.length === 0 ? (
+        <p className="text-body-md text-on-surface-variant">
+          {hasRunway
+            ? "No advisories for this wallet right now."
+            : "Register a wallet and fetch runway — the Copilot reads the live data and surfaces advice here (top-up alerts, concentration risk, burn rate)."}
+        </p>
+      ) : (
+        <div className="grid sm:grid-cols-2 gap-3">
+          {insights.map((i) => {
+            const s = INSIGHT_STYLE[i.severity];
+            return (
+              <div key={i.code + i.title} className={`rounded-lg border p-3 flex gap-3 ${s.ring}`}>
+                <span className={`material-symbols-outlined text-[20px] ${s.text}`}>{s.icon}</span>
+                <div>
+                  <div className={`text-body-md font-medium ${s.text}`}>{i.title}</div>
+                  <div className="text-body-md text-on-surface-variant mt-0.5">{i.detail}</div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </section>
   );
 }
 
