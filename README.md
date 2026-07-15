@@ -2,11 +2,13 @@
 
 ASPs for the OKX.AI Genesis Hackathon (July 3 to 17, 2026). The primary submission is **Treasury Copilot**, one tight, fully-shipped, listed-early A2MCP service. KYA is a conditional fast-follow; The Firm is demo narrative, not a build target. This ordering is deliberate and is the result of descoping a three-ASP plan that was over-scoped for a two-person, 11-day window.
 
-| Entry | Codename | Type | Status | Primary tracks |
+| Entry | Codename | Type | Status (as of Jul 15) | Primary tracks |
 |---|---|---|---|---|
-| C | **Treasury Copilot** | A2MCP | **THE SUBMISSION. Ships complete, listed early.** | Finance Copilot, Best Product, Revenue Rocket (upside) |
-| B | **KYA: Know Your Agent** | A2MCP | Conditional: only if Treasury is live and clean by D7. Heuristic-only; ZK deferred to writeup. | Creative Genius, Finance Copilot |
-| A | **The Firm** | A2A | Narrative only. A slide and a vision, not a listed deliverable, unless everything else is done early. | (story for Creative Genius) |
+| C | **Treasury Copilot** | A2MCP | **THE SUBMISSION. Feature-complete behind mock charging (13/13 tests, local e2e smoke green). Deploy artifacts + verified X Layer config + EIP-3009 settlement are on P1's branch, NOT yet merged to `main`. Remaining: merge branch, deploy, real x402 swap, hand-verify revenue vs OKLink, capture Agent ID, SUBMIT LISTING.** | Finance Copilot, Best Product, Revenue Rocket (upside) |
+| B | **KYA: Know Your Agent** | A2MCP | Conditional fast-follow (only if Treasury is live+approved with slack — gate G2). Fixture-only: scoring core + handlers + 15 tests; no live-chain collector, no MCP transport. Open score/rubric sign-off. ZK deferred to writeup. | Creative Genius, Finance Copilot |
+| A | **The Firm** | A2A | Narrative only. DORMANT (uv stub only, no GO). A slide and a vision, not a listed deliverable, unless everything else is done early. | (story for Creative Genius) |
+
+> Supporting workstreams (not judged entries): **I2** — `packages/mocks`, `tests/` (3 golden Firm evals), `tools/demo` all built and passing. **AG1** — `apps/dashboard` built (GO given), but has an OPEN integrity issue: it renders simulated "PROOF VERIFIED"/"SETTLED"/explorer-link data as if real — must be wired to real reads or labeled SIMULATED before any demo recording.
 
 ## Why this ordering (read before touching the plan)
 
@@ -40,17 +42,19 @@ KYA is more differentiated and more interesting, but it is a harder ship and its
 ```
 constellation/
   packages/
-    indexer/          X Layer chain indexer (port of LedgerForge indexer)   [ACTIVE]
-    erc8004/          ERC-8004 registry readers, chain-agnostic EVM (port)   [ACTIVE if KYA proceeds]
-    zk/               EZKL pipeline (port of CredAttest tooling)             [DEFERRED - writeup proof only]
-    swarm-utils/      Coordinator/state glue harvested from Spawn            [DORMANT - only if The Firm is built]
-    payment-adapter/  THIN wrapper around x402 endpoint (OKX SDK optional)   [ACTIVE]
-    mocks/            Mock MCP server + golden fixtures per INTERFACES.md     [ACTIVE]
+    indexer/          X Layer chain indexer (port of LedgerForge indexer)   [BUILT - X Layer port, 8/8 tests]
+    erc8004/          ERC-8004 registry readers, chain-agnostic EVM (port)   [BUILT - identity client + reputation stub, 4/4 tests]
+    zk/               EZKL pipeline (port of CredAttest tooling)             [NOT BUILT - deferred to writeup proof only]
+    swarm-utils/      Coordinator/state glue harvested from Spawn            [NOT BUILT - dormant, only if The Firm is built]
+    payment-adapter/  THIN wrapper around x402 endpoint (OKX SDK optional)   [BUILT - mock done; real x402/EIP-3009 mode on P1 branch]
+    mocks/            Mock MCP server + golden fixtures per INTERFACES.md     [BUILT - I2, 4 tests passing]
   apps/
-    treasury/         THE SUBMISSION. MCP server. TypeScript.                [ACTIVE - priority 1]
-    kya/              Conditional. MCP server + scoring engine. TypeScript.  [ACTIVE if Treasury clean by D7]
-    firm/             Narrative only. LangGraph app. Python.                 [DORMANT]
-    dashboard/        Optional read-only demo viewer.                        [FIRST CUT]
+    treasury/         THE SUBMISSION. MCP server. TypeScript.                [FEATURE-COMPLETE - deploy artifacts on branch, not yet listed]
+    kya/              Conditional. MCP server + scoring engine. TypeScript.  [FIXTURE-ONLY - scoring core + handlers + 15 tests; no live reads/transport]
+    firm/             Narrative only. LangGraph app. Python.                 [DORMANT - uv stub only]
+    dashboard/        Optional read-only demo viewer.                        [BUILT - AG1; OPEN integrity bug: simulated data shown as real]
+  tests/              Three golden Firm evals (I2)                           [BUILT - 3 tests passing]
+  tools/demo/         CLI demo scenario runner (I2)                          [BUILT]
   docs/
     INTERFACES.md     Tool schemas. Treasury + KYA sections are law; Firm section is deferred.
     PLAN.md           Day-by-day plan around Treasury-as-keystone.

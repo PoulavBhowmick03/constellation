@@ -4,26 +4,32 @@ Paste as the first message of each agent's session. Fill the `<...>` slots first
 
 ---
 
-## P1 — Poulav's Claude Code (chain data + Treasury)
+## P1 — Poulav's Claude Code (Treasury listing + real x402)
 
 ```
 You are workstream P1 in this repo. Read CLAUDE.md, README.md, docs/INTERFACES.md, and docs/PLAN.md fully before any code. Your ownership boundaries and stop-and-ask rules in CLAUDE.md are absolute.
 
-Mission: Treasury Copilot live and submitted for OKX.AI listing by end of July 9. It is the review probe for our other two entries, so schedule beats elegance.
+Mission: get Treasury Copilot's OKX.AI listing SUBMITTED as early as possible. Scaffolding, the indexer port, the five MCP tools, the EIP-191 register_wallet flow, mock charging (13/13 tests, local e2e smoke green), the Fly deploy artifacts, the on-chain-verified X Layer config, and the EIP-3009 settlement design are DONE — see docs/status/P1.md. The 24h review clock means every hour before submission counts.
 
-Context you need from me now:
-- LedgerForge indexer source: <path-or-repo-url>
-- OKX Payment SDK docs: <paste-or-path>  (if I have not provided this yet, build payment-adapter against the mock implementation and list every assumption in docs/status/P1.md)
-- X Layer RPC + USDT/USDG token addresses: <fill-or-mark-unverified>
+FIRST, reconcile the tree: your deploy + real-x402 work (Dockerfile.treasury, fly.treasury.toml, verified USDT0/USDG addresses, packages/payment-adapter/src/x402.ts) is on branch migrate/celo and is NOT on main. main has no deployable Treasury. Merge/rebase that work onto main (or deploy from the branch and record which) before anything lists.
 
-Today (D1/D2), in order:
-1. Scaffold the monorepo exactly per README.md (pnpm workspaces; apps/firm as an empty uv project stub).
-2. Port the indexer: retarget to X Layer eip155:196, track ERC-20 Transfers for USDT/USDG on registered wallets, OKB balance snapshots, per-tx gas. Ledger schema per CLAUDE.md P1 brief. Migrations + docker compose for Postgres.
-3. apps/treasury MCP server: the five tools from INTERFACES.md section 1, exactly, including the EIP-191 register_wallet nonce flow.
-4. packages/payment-adapter: interface + mock implementation. Nothing outside this package may import the SDK, including your own code.
-5. Verify get_revenue_report against a real X Layer wallet by hand against the explorer; record the wallet and numbers in docs/status/P1.md.
+Context I owe you (fill/confirm before relying on it):
+- Confirmed public Treasury endpoint URL (https://…/mcp): <fill — is the Fly deploy actually live? No status file records a URL yet>
+- Real x402 shape captured from the OKX walkthrough vs the skill-documented PAYMENT-REQUIRED/PAYMENT-SIGNATURE/PAYMENT-RESPONSE shape: <fill>
+- Agent ID (newAgentId from ASP registration): <fill — human-only, exists only after registration under your wallet>
+- A real X Layer wallet to hand-verify against OKLink: <fill>
 
-Rules that will get us disqualified if broken: read-only (no transaction-sending code), no invented addresses (env + TODO(unverified)), no secrets in the repo. End the session by appending Done/Blocked/Next/Questions to docs/status/P1.md.
+Today, in order:
+1. Merge the deploy+x402 branch onto main; finish real EIP-3009 `exact` settlement in packages/payment-adapter/src/x402.ts (payer signs transferWithAuthorization, funds move payer→payTo — the custodial facilitator settler stays rejected as non-custodial-violating).
+2. Deploy: `fly deploy --config fly.treasury.toml` (release_command auto-migrates; secrets are the verified X Layer config). Confirm the endpoint is live and reachable; record the URL in docs/status/P1.md.
+3. Support the human OKX walkthrough against the live endpoint; verify the real x402 surface; resolve the residual unknown (who redeems the EIP-3009 auth on-chain). Note findings in P1.md.
+4. Flip Treasury from mock to real x402; re-run the end-to-end smoke against the live endpoint with a real (test-mode) payment. Wash-trading rule holds: no self-calls to inflate usage.
+5. Index a real X Layer wallet and HAND-VERIFY get_revenue_report totals + by_counterparty against OKLink. Record wallet, block range, numbers in P1.md. Treasury DoD gate — do not let the listing claim verified numbers until this passes.
+6. Once 1–5 are green and the Agent ID is captured: write the listing submission checklist to P1.md; hand to the human to submit (target: midday July 16 UTC so review clears before July 17 23:59 UTC).
+
+Open questions already in P1.md needing human sign-off before listing: the error envelope ({error:{code,message}} with codes BAD_SIGNATURE|NONCE_EXPIRED|BAD_REQUEST|WALLET_NOT_FOUND|PAYMENT_REQUIRED — INTERFACES only names the first two) and the two-phase register_wallet interpretation. See DOCSYNC.md for flagged INTERFACES drift.
+
+Rules that get us disqualified if broken: read-only (no transaction-sending code outside packages/payment-adapter), no invented addresses (env + TODO(unverified)), no secrets in the repo. End the session by appending Done/Blocked/Next/Questions to docs/status/P1.md.
 ```
 
 ---
@@ -40,12 +46,16 @@ Context you need from me now:
 - ERC-8004 registry addresses for Ethereum + Base: <fill-or-mark-unverified; official EIP-8004 references are the source of truth>
 - Note: registration on OKX uses OKX Agent Identity, not a BYO ERC-8004 identity. KYA READS ERC-8004 as a data source; it is not our identity primitive. Confirm whether ERC-8004 exists on X Layer (unknown) — if not, read cross-chain from Ethereum/Base.
 
-Today (D1/D2), in order:
-1. apps/kya scoring engine: four components, six flags, weights exactly per INTERFACES.md section 2, as pure functions over an AgentEvidence struct. Unit tests against the golden fixtures BEFORE any chain code. agent_transferred_identity must trip IDENTITY_TRANSFERRED_RECENTLY with correct evidence; agent_sybil_burst must score below 50. This is the whole differentiator — explainable score + identity-transfer flag — so make it clean.
-2. Only after the engine is solid: begin packages/zk from CredAttest (tiny model, EZKL circuit, Groth16/BN254, generated verifier, Foundry deploy script — humans run deploys, never you, never CI). Target is a single demonstrable proof for the writeup, not a per-call production feature. Timebox hard; if it fights, it stays a roadmap slide and KYA ships heuristic-only.
-3. Stub the MCP server for the four KYA tools with charging via packages/payment-adapter (import only). attest_agent returns zk.available:false by default.
+Current state (docs/status/P2.md): the scoring engine (four weighted components, six flag thresholds), fixture-backed handlers for all four KYA tools gated through packages/payment-adapter, and 15 tests are DONE and green. attest_agent already degrades to check_agent pricing with zk.available:false reason "roadmap". Fixtures: agent_good 86/no-flags, agent_transferred_identity 67/IDENTITY_TRANSFERRED_RECENTLY, agent_sybil_burst 49/REVIEWER_CONCENTRATION+BURST_FEEDBACK. No live-chain collector, no MCP transport, no ZK. KYA is CONDITIONAL — it only lists if Treasury is live+approved with genuine slack before July 17 23:59 UTC (PLAN.md gate G2). Do not assume KYA ships; if Treasury needs help, Treasury wins.
 
-packages/erc8004 arrives from P1 around July 9 IF KYA proceeds; until then everything runs on fixtures. Do not block on it. End every session with Done/Blocked/Next/Questions in docs/status/P2.md.
+Open item to fix IF/WHEN KYA proceeds (blocks listing, not fixtures): confirm every declared golden fixture score equals the weighted sum of its component scores, and that every flag fires on the intended fixture. Add/keep tests asserting declared_score == weighted_component_sum for each fixture. Then get both humans to sign off on the per-component point rubric documented in apps/kya/README.md — INTERFACES.md fixes weights + flag thresholds but NOT the internal rubric, so it's an unfrozen decision (see DOCSYNC.md).
+
+If KYA proceeds, in order:
+1. Reconcile the score/flag check above; land rubric sign-off.
+2. Wire live evidence: packages/erc8004 (already built by P1) supplies the reads. Implement the live collector without modifying P1's package. ERC-8004 registry addresses for Ethereum + Base and X Layer availability are still unverified — use env + TODO(unverified), never guess.
+3. packages/zk from CredAttest stays DEFERRED to the writeup (tiny model, EZKL circuit, Groth16/BN254, generated verifier, Foundry deploy — humans run deploys, never you, never CI). A single demonstrable proof for the roadmap link, not a per-call feature. Timebox hard; if it fights, it stays a slide and KYA ships heuristic-only.
+
+Confirm the request-shape assumption (P2.md Q4): check_agent and attest_agent take the same {agent_ref} request as get_flags — INTERFACES §2 only states it explicitly for get_flags. End every session with Done/Blocked/Next/Questions in docs/status/P2.md.
 ```
 
 ---
@@ -63,14 +73,14 @@ Ishita: run **I2** as your primary. If you have a second Claude Code seat idle, 
 ```
 You are workstream I2 in this repo. Read AGENTS.md, README.md, docs/INTERFACES.md, and docs/PLAN.md fully before any code. Ownership boundaries and stop-and-ask rules in AGENTS.md are absolute.
 
-Mission: everyone else's velocity. I1 can only work today because your mocks exist; The Firm only ships on July 13 if your evals pass it.
+Current state (docs/status/I2.md): DONE and passing — packages/mocks (mock MCP server + golden fixtures, 4 tests), tests/ (three golden Firm evals: diligence rejection, budget halt, provenance completeness, 3 tests), tools/demo (CLI scenario runner). Priority has since shifted: Treasury (P1) is the keystone and its listing is the only hard deadline. Your mocks/evals are no longer on the critical path; the Treasury demo is recorded directly against the live endpoint.
 
-Today (D1/D2), in order:
-1. packages/mocks: an MCP server implementing EVERY tool in INTERFACES.md with identical schemas, switched by MOCK_MODE=1, serving the four golden fixtures (agent_good, agent_transferred_identity, agent_sybil_burst, wallet_with_history). Include both attest_agent shapes (zk available true and false). Make fixture numbers internally consistent: the sybil fixture's top-3 reviewer share must actually exceed 0.60, the transferred-identity fixture's feedback timestamps must predate its transfer.
-2. tests/: the three golden eval tasks from docs/PLAN.md as one-command automated checks against The Firm (diligence rejection, budget halt, provenance completeness). These gate the Firm's listing submission on July 13.
-3. tools/demo: a scenario runner that executes the demo spine and pretty-prints the run (task, plan, per-vendor KYA verdicts, payments with references, assembled memo) cleanly enough to screen-record as-is.
+Now, in order:
+1. Highest-leverage help right now — the AG1 dashboard (apps/dashboard, built) renders SIMULATED data ("PROOF VERIFIED"/"SETTLED"/x402 explorer links from fixtures + simulation scenarios) as if real. That's a correctness/integrity blocker for any recording. Coordinate with AG1 (whose lane apps/dashboard is): either wire it to real read endpoints or clearly label it SIMULATED before ANY demo. Also confirm/fix the reported frozen-lockfile install bug. Do NOT edit apps/dashboard yourself if AG1 is active — pair, don't collide.
+2. Once Treasury is live: point demo prep at the REAL deployment — the Treasury demo runs against the live https://…/mcp with real X Layer data, not mocks. This is higher-leverage than more mock work.
+3. Keep mocks/evals in lockstep with any schema change: if INTERFACES.md version bumps or P1 changes Treasury's error envelope/report formatting, your mock outputs update in the same PR. Schema drift between mocks and INTERFACES.md is a build-stopping bug.
 
-Schema drift between your mocks and INTERFACES.md is a build-stopping bug; if the schema file version bumps, your update ships in the same PR. End the session by appending Done/Blocked/Next/Questions to docs/status/I2.md.
+End every session by appending Done/Blocked/Next/Questions to docs/status/I2.md.
 ```
 
 ---
@@ -80,7 +90,11 @@ Schema drift between your mocks and INTERFACES.md is a build-stopping bug; if th
 ```
 You are workstream AG1 in this repo. This project does not assume you auto-load any config: explicitly read AGENTS.md, README.md, docs/INTERFACES.md, and docs/PLAN.md now, and treat the AG1 brief in AGENTS.md as binding.
 
-Precondition: a human has written GO in docs/status/AG1.md. If that line is absent, stop and say so.
+Precondition: GO must be present in docs/status/AG1.md. GO was recorded and apps/dashboard is already scaffolded and builds. Do NOT expand scope or add features on the assumption of continued GO — the listing clock outranks the dashboard, and any NEW scope needs a human to confirm GO still stands. If asked to expand, ask first.
 
-Mission: apps/dashboard, a read-only Next.js viewer that makes our three 90-second demo videos legible: Firm run timeline with nodes lighting up as they execute, KYA report cards with score breakdowns and flags, payment receipts with X Layer explorer links, rendered treasury statement. Data sources: The Firm's run-log JSON and the read endpoints of KYA/Treasury. No writes anywhere, no dependencies added to other packages, no edits outside apps/dashboard; bugs found elsewhere go in docs/status/AG1.md, not in patches. Optimize for screen-recording clarity over feature count: big type, one screen per demo beat. End the session by appending Done/Blocked/Next/Questions to docs/status/AG1.md.
+TWO KNOWN BUGS must be fixed BEFORE any further dashboard feature work (both blockers, not polish):
+1. Fabricated data shown as real: the dashboard renders "PROOF VERIFIED" / "SETTLED" / x402 explorer-link content driven by fixtures and simulation scenarios, presented as if genuine. This is a correctness/integrity issue — nothing may be recorded while simulated content reads as real. Either wire it to the real Treasury/KYA read endpoints, or clearly and visibly label it SIMULATED. AG1.md does not record this as fixed; treat it as OPEN.
+2. The reported frozen-lockfile install bug — confirm and fix so the app installs cleanly. AG1.md does not record this as fixed; treat it as OPEN.
+
+Mission (maintenance, after the two fixes): apps/dashboard is a read-only Next.js viewer that makes the demo legible — KYA report cards with score breakdowns and flags, payment receipts with REAL X Layer explorer links (no fabrication), rendered treasury statement, and (narrative only) a Firm run timeline. Once Treasury is live, prefer real read endpoints over fixtures for anything shown on camera. No writes anywhere, no dependencies added to other packages, no edits outside apps/dashboard; bugs found elsewhere go in docs/status/AG1.md, not in patches. Optimize for screen-recording clarity: big type, one screen per demo beat. End the session by appending Done/Blocked/Next/Questions to docs/status/AG1.md.
 ```
