@@ -57,7 +57,11 @@ export interface CreateAdapterOptions {
  * mode must NEVER silently no-op charging, so a missing credential throws with
  * the exact env var names to set rather than falling back to a no-charge path.
  */
-function loadOkxCredentialsFromEnv(env: NodeJS.ProcessEnv = process.env): OkxCredentials {
+function loadOkxCredentialsFromEnv(
+  // Structural env type (not NodeJS.ProcessEnv) so this exported signature does
+  // not leak the NodeJS global namespace into consumers' .d.ts resolution.
+  env: Record<string, string | undefined> = process.env,
+): OkxCredentials {
   const apiKey = env.OKX_API_KEY;
   const secretKey = env.OKX_SECRET_KEY;
   const passphrase = env.OKX_PASSPHRASE;
