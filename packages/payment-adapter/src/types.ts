@@ -18,6 +18,14 @@ export interface PaymentContext {
   headers?: Record<string, string | undefined>;
   /** Wallet the call is being made on behalf of, if known. */
   callerWallet?: string;
+  /**
+   * Output channel for the x402 settlement receipt. When a caller supplies this
+   * object, a tool that settles a real payment writes the base64 PAYMENT-RESPONSE
+   * carrier into it, so the transport can echo it back to the payer WITHOUT
+   * polluting the tool's domain result. Left undefined by callers that don't care
+   * (tests, the mock path). See handlers.gate + server.asContent in apps/treasury.
+   */
+  settlement?: { paymentResponse?: string };
 }
 
 export type RequirePaymentStatus = "paid" | "payment_required";
@@ -29,11 +37,18 @@ export interface RequirePaymentResult {
   price: Money | null;
   /** Present when status === "paid": a settlement receipt id for logging. */
   receiptId?: string;
+  /** Base64 x402 settlement receipt for the transport's PAYMENT-RESPONSE carrier. */
+  paymentResponse?: string;
   /** Present when status === "payment_required": why, plus how to pay. */
   challenge?: {
     reason: string;
-    /** How a caller proves payment against the mock (documented, not a secret). */
-    accepts: string;
+    /** Standard x402 PaymentRequired error field; mirrors reason. */
+    error?: string;
+    /** Mock documentation or the real x402 accepts array. */
+    accepts: string | Array<Record<string, unknown>>;
+    /** Present for real x402 challenges so MCP buyers can detect the protocol. */
+    x402Version?: 2;
+    resource?: Record<string, unknown>;
   };
 }
 

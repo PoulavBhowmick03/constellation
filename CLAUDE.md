@@ -4,6 +4,8 @@ You are one of several coding agents working in this monorepo in parallel. Your 
 
 **Current priority (read this first):** The submission is **Treasury Copilot**. P1 is the critical path. **I1 (The Firm) is DORMANT** — do not begin unless a human has explicitly activated it per PLAN.md; if you are I1 and no activation is present, stop and say so. KYA (P2's lane) is a conditional fast-follow, not guaranteed to ship.
 
+**Status (Jul 15, eve):** Treasury is **LIVE** at `https://constellationokx.fly.dev/mcp` with real x402 charging (`PAYMENT_MODE=sdk`). Proven: OKX facilitator auth + payment verify on-chain, real HTTP 402, free path E2E on the live endpoint, revenue math hand-verified vs live X Layer data, 77 tests green. **Remaining before submit:** one funded settlement tx (funding-gated), 4 INTERFACES sign-offs, activate Agent 5863, demo + form. See `docs/status/P1.md`. **Repo-split caveat:** the working impl is on `migrate/celo` (no shared history with `origin/main`, which holds mocks/evals/dashboard) — reconcile before pushing to main.
+
 ## Ownership matrix (hard boundaries)
 
 | Workstream | Owns (may create/edit) | Must never edit |

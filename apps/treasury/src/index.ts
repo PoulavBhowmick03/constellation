@@ -19,7 +19,7 @@ const PORT = Number(process.env.TREASURY_PORT ?? 7801);
 const NONCE_TTL = Number(process.env.REGISTER_NONCE_TTL_SECONDS ?? 600);
 const START_BLOCK = Number(process.env.INDEXER_START_BLOCK ?? 0);
 
-const handlers = createHandlers({
+const deps = {
   ledger: {
     registerWallet,
     getWalletById,
@@ -34,9 +34,9 @@ const handlers = createHandlers({
   chainId: XLAYER_CHAIN_ID,
   startBlock: START_BLOCK,
   nonceTtlSeconds: NONCE_TTL,
-});
+};
 
-createApp(handlers).listen(PORT, () => {
+createApp(deps).listen(PORT, () => {
   console.log(
     `[treasury] Treasury Copilot MCP on :${PORT}/mcp (payment mode: ${process.env.PAYMENT_MODE ?? "mock"})`,
   );

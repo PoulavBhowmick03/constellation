@@ -3,7 +3,10 @@ import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/
 import express, { type Request, type Response } from "express";
 import { z } from "zod";
 import type { PaymentContext } from "@constellation/payment-adapter";
+import { encodePaymentRequired, X402_HEADERS } from "@constellation/payment-adapter";
 import type { TreasuryHandlers } from "./handlers.js";
+import { createHandlers } from "./handlers.js";
+import type { TreasuryDeps } from "./deps.js";
 
 const periodShape = z
   .object({ from: z.string().optional(), to: z.string().optional() })
@@ -16,11 +19,34 @@ function paymentCtx(req: Request): PaymentContext {
   for (const [k, v] of Object.entries(req.headers)) {
     headers[k.toLowerCase()] = Array.isArray(v) ? v[0] : v;
   }
-  return { headers };
+  return { headers, ...(req as any).paymentSettlement };
 }
 
-function asContent(result: unknown) {
-  return { content: [{ type: "text" as const, text: JSON.stringify(result, null, 2) }] };
+function asContent(result: unknown, paymentResponse?: string) {
+  const content = [{ type: "text" as const, text: JSON.stringify(result, null, 2) }];
+  if (paymentResponse) {
+    // The x402 settlement receipt travels as its own MCP content block (not an
+    // HTTP header — payment is tunnelled through MCP tool content here). x402Version
+    // lets an MCP-aware payer recognize and decode PAYMENT-RESPONSE.
+    content.push({
+      type: "text" as const,
+      text: JSON.stringify({ x402Version: 2, "PAYMENT-RESPONSE": paymentResponse }, null, 2),
+    });
+  }
+  return { content };
+}
+
+/**
+ * Run a paid tool with a fresh settlement sink so its x402 receipt (sdk mode)
+ * is echoed back as a PAYMENT-RESPONSE block. The domain result is returned
+ * verbatim; the receipt never merges into it.
+ */
+async function paidContent(
+  ctx: PaymentContext,
+  run: (ctx: PaymentContext) => Promise<unknown>,
+) {
+  const result = await run(ctx);
+  return asContent(result, ctx.settlement?.paymentResponse);
 }
 
 /**
@@ -53,14 +79,14 @@ function buildServer(handlers: TreasuryHandlers, ctx: PaymentContext): McpServer
     "get_revenue_report",
     "Incoming USDT/USDG totals by counterparty for a period. Paid: 0.10 USDT.",
     { wallet_id: z.string(), period: periodShape },
-    async (args) => asContent(await handlers.get_revenue_report(args, ctx)),
+    async (args) => paidContent(ctx, (c) => handlers.get_revenue_report(args, c)),
   );
 
   server.tool(
     "get_expense_report",
     "Outgoing USDT/USDG totals by counterparty plus OKB gas for a period. Paid: 0.10 USDT.",
     { wallet_id: z.string(), period: periodShape },
-    async (args) => asContent(await handlers.get_expense_report(args, ctx)),
+    async (args) => paidContent(ctx, (c) => handlers.get_expense_report(args, c)),
   );
 
   server.tool(
@@ -71,17 +97,45 @@ function buildServer(handlers: TreasuryHandlers, ctx: PaymentContext): McpServer
       period: periodShape,
       format: z.enum(["csv", "json", "md"]),
     },
-    async (args) => asContent(await handlers.export_statement(args, ctx)),
+    async (args) => paidContent(ctx, (c) => handlers.export_statement(args, c)),
   );
 
   return server;
 }
 
-export function createApp(handlers: TreasuryHandlers): express.Express {
+export function createApp(deps: TreasuryDeps): express.Express {
+  const handlers = createHandlers(deps);
   const app = express();
   app.use(express.json());
 
-  app.post("/mcp", async (req: Request, res: Response) => {
+  app.post("/mcp", async (req: Request, res: Response, next: express.NextFunction) => {
+    try {
+      if (req.body?.method === "tools/call" && req.body.params?.name) {
+        const tool = req.body.params.name;
+        if (["get_revenue_report", "get_expense_report", "export_statement"].includes(tool)) {
+          const ctx = paymentCtx(req);
+          const payRes = await deps.payments.requirePayment(tool, ctx);
+          if (payRes.status === "payment_required") {
+            // Must return HTTP 402 with the exact x402 header
+            res.status(402)
+               .header(X402_HEADERS.paymentRequired, encodePaymentRequired(payRes.challenge as any))
+               .json({
+                 jsonrpc: "2.0",
+                 id: req.body.id,
+                 error: { code: -32000, message: `payment required for "${tool}"` }
+               });
+            return;
+          } else {
+            // Attach the successful receipt so handlers can wrap it in the MCP response
+            (req as any).paymentSettlement = { preflightResult: payRes, settlement: { paymentResponse: (payRes as any).paymentResponse } };
+          }
+        }
+      }
+      next();
+    } catch (err) {
+      next(err);
+    }
+  }, async (req: Request, res: Response) => {
     const server = buildServer(handlers, paymentCtx(req));
     const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined });
     res.on("close", () => {

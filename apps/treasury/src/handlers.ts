@@ -56,8 +56,16 @@ export function createHandlers(deps: TreasuryDeps) {
 
   /** Gate a paid tool. Returns null when the call may proceed. */
   async function gate(tool: string, ctx: PaymentContext): Promise<ToolError | null> {
-    const res = await payments.requirePayment(tool, ctx);
-    if (res.status === "paid") return null;
+    const res = (ctx as any).preflightResult ?? await payments.requirePayment(tool, ctx);
+    if (res.status === "paid") {
+      // Real settlement (sdk mode) produces a base64 PAYMENT-RESPONSE receipt.
+      // Hand it to the transport via the caller's sink so it reaches the payer
+      // without contaminating the tool's domain result. Mock mode has none.
+      if (res.paymentResponse && ctx.settlement) {
+        ctx.settlement.paymentResponse = res.paymentResponse;
+      }
+      return null;
+    }
     return {
       error: {
         code: "PAYMENT_REQUIRED",
