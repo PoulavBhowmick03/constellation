@@ -26,6 +26,19 @@ async function precheckPaidCall(
   if (tool === "export_statement" && !["csv", "json", "md"].includes(String(args.format))) {
     return { error: { code: "BAD_REQUEST", message: "format must be csv | json | md" } };
   }
+  // Validate the period BEFORE charging — a malformed from/to must not settle.
+  const period = args.period;
+  if (period !== undefined && period !== null) {
+    if (typeof period !== "object") {
+      return { error: { code: "BAD_REQUEST", message: "period must be an object" } };
+    }
+    for (const key of ["from", "to"] as const) {
+      const v = (period as Record<string, unknown>)[key];
+      if (v !== undefined && (typeof v !== "string" || Number.isNaN(Date.parse(v)))) {
+        return { error: { code: "BAD_REQUEST", message: `period.${key} must be an ISO date` } };
+      }
+    }
+  }
   const walletId = args.wallet_id;
   if (typeof walletId !== "string" || walletId.length === 0) {
     return { error: { code: "BAD_REQUEST", message: "wallet_id is required" } };

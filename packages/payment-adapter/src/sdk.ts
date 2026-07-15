@@ -414,8 +414,14 @@ function validateExactPayload(
   // challenge so a compliant client's proof can't be redirected to another tool.
   // (Absent resource falls back to price/payTo binding; a malicious buyer can at
   // most redirect their own single-use payment to another same-priced tool.)
+  // Require the resource binding (the real OKX client echoes it — confirmed from a
+  // live pay-local payload). Requiring rather than compare-if-present closes the
+  // bypass where omitting `resource` would let an equal-priced proof cross tools.
   const declaredResource = isRecord(payload.resource) ? payload.resource.url : undefined;
-  if (typeof declaredResource === "string" && declaredResource !== expectedResourceUrl) {
+  if (typeof declaredResource !== "string") {
+    throw new Error("payment is missing its resource binding");
+  }
+  if (declaredResource !== expectedResourceUrl) {
     throw new Error("payment resource does not match the requested tool");
   }
   if (!isRecord(payload.accepted)) throw new Error("payment is missing accepted terms");
