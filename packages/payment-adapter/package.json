@@ -1,0 +1,25 @@
+{
+  "name": "@constellation/payment-adapter",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "The ONLY package allowed to touch a payment SDK. Inbound requirePayment + outbound payAndCall, with a mock implementation. Nothing outside this package imports the SDK.",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.0",
+    "typescript": "^5.6.0",
+    "vitest": "^2.1.0"
+  }
+}

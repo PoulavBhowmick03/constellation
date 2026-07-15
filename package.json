@@ -1,0 +1,17 @@
+{
+  "name": "constellation",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Constellation — Treasury Copilot (A2MCP) and conditional KYA, for the OKX.AI Genesis Hackathon.",
+  "packageManager": "pnpm@10.30.3",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "build": "pnpm -r build",
+    "test": "pnpm -r test",
+    "typecheck": "pnpm -r typecheck",
+    "db:up": "docker compose up -d db",
+    "db:down": "docker compose down"
+  }
+}

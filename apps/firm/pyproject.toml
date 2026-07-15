@@ -1,0 +1,16 @@
+# apps/firm — The Firm (I1's lane). DORMANT / narrative-only under the current
+# plan (see docs/PLAN.md). This is an empty uv project stub scaffolded by P1 so
+# the workspace layout matches README.md. P1 must not build inside it.
+[project]
+name = "firm"
+version = "0.1.0"
+description = "The Firm — LangGraph orchestrator (DORMANT until explicitly activated per PLAN.md)."
+requires-python = ">=3.12"
+dependencies = []
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.uv]
+package = false

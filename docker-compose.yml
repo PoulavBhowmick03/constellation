@@ -1,0 +1,23 @@
+# Constellation — local Postgres for packages/indexer.
+# `pnpm db:up` / `docker compose up -d db`
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: constellation-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-constellation}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-constellation}
+      POSTGRES_DB: ${POSTGRES_DB:-constellation}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - constellation_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-constellation}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  constellation_pgdata:

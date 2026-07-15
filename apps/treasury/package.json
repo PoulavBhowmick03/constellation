@@ -1,0 +1,31 @@
+{
+  "name": "@constellation/treasury",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Treasury Copilot — THE SUBMISSION. Read-only A2MCP bookkeeping for agent businesses on X Layer: revenue/expense/gas reports, runway, exportable statements. Five tools, exactly per docs/INTERFACES.md.",
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "dev": "tsx src/index.ts",
+    "start": "node dist/index.js"
+  },
+  "dependencies": {
+    "@constellation/indexer": "workspace:*",
+    "@constellation/payment-adapter": "workspace:*",
+    "@modelcontextprotocol/sdk": "^1.12.0",
+    "dotenv": "^16.4.5",
+    "express": "^4.21.0",
+    "viem": "^2.21.0",
+    "zod": "^3.23.8"
+  },
+  "devDependencies": {
+    "@types/express": "^4.17.21",
+    "@types/node": "^20.11.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.6.0",
+    "vitest": "^2.1.0"
+  }
+}
