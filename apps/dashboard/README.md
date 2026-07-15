@@ -1,36 +1,41 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Constellation dashboard
 
-## Getting Started
+Read-only demo viewer for Constellation. Treasury calls are live; KYA and The
+Firm remain explicitly labelled fixture/roadmap views.
 
-First, run the development server:
+## Run locally
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+pnpm -F @constellation/dashboard dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+The default Treasury target is `https://constellationokx.fly.dev/mcp`. Override
+it with `NEXT_PUBLIC_TREASURY_MCP_URL`; see `.env.example`.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## MCP transport
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+Browsers cannot call the Fly endpoint directly because its current response
+does not include CORS headers. `src/app/api/mcp/route.ts` is therefore a narrow,
+same-origin POST proxy. It forwards only the JSON-RPC body and the MCP content
+headers, preserves the upstream HTTP status, and returns `PAYMENT-REQUIRED` /
+`PAYMENT-RESPONSE` headers when present.
 
-## Learn More
+`src/app/mcpClient.ts` parses the stateless streamable-HTTP response. For the
+normal MCP success path it reads the single SSE `data:` envelope and parses
+`result.content[0].text`. HTTP 402 and MCP-level `PAYMENT_REQUIRED` results are
+returned as honest payment challenges; the dashboard never signs or submits a
+payment.
 
-To learn more about Next.js, take a look at the following resources:
+## Live versus roadmap
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+- Live: `register_wallet` challenge and signature submission, `get_runway`, and
+  paid-tool x402 challenge discovery.
+- Not live: KYA fixture scorecards and The Firm workflow simulation.
+- Deferred: browser wallet connection and x402 payment execution.
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+Build and check:
 
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+```bash
+pnpm -F @constellation/dashboard lint
+pnpm -F @constellation/dashboard build
+```
