@@ -1,7 +1,12 @@
 import { describe, expect, it } from "vitest";
 import { privateKeyToAccount } from "viem/accounts";
 import type { GasRow, TransferRow } from "@constellation/indexer";
-import { MOCK_PAYMENT_HEADER, MockPaymentAdapter } from "@constellation/payment-adapter";
+import {
+  MOCK_PAYMENT_HEADER,
+  MockPaymentAdapter,
+  type PaymentAdapter,
+  type PaymentContext,
+} from "@constellation/payment-adapter";
 import {
   createHandlers,
   isToolError,
@@ -166,6 +171,45 @@ describe("payment gating (mock x402)", () => {
     const walletId = await register(handlers);
     const res = await handlers.get_runway({ wallet_id: walletId });
     expect(isToolError(res)).toBe(false);
+  });
+
+  it("threads the sdk settlement receipt into the ctx sink (PAYMENT-RESPONSE)", async () => {
+    // Stub the adapter's paid result so we exercise ONLY the treasury seam:
+    // gate() must copy paymentResponse into ctx.settlement so the transport can
+    // echo it, without touching the domain result. (The adapter's own receipt
+    // production is proven in payment-adapter/test/sdk.test.ts.)
+    const settling: PaymentAdapter = {
+      async requirePayment(_tool: string, _ctx: PaymentContext) {
+        return {
+          status: "paid" as const,
+          price: { token: "USDT", amount: "100000", decimals: 6 },
+          receiptId: "0xtx",
+          paymentResponse: "RECEIPT_BASE64",
+        };
+      },
+      async payAndCall() {
+        throw new Error("unused");
+      },
+    };
+    const ledger = new MemoryLedger(Date.now);
+    const handlers = createHandlers({
+      ledger,
+      payments: settling,
+      chainId: 196,
+      startBlock: 0,
+      nonceTtlSeconds: 600,
+    });
+    const walletId = await register(handlers);
+    const sink: { paymentResponse?: string } = {};
+    const res = (await handlers.get_revenue_report(
+      { wallet_id: walletId, period: {} },
+      { settlement: sink },
+    )) as Record<string, unknown>;
+    // Domain result is unpolluted...
+    expect(isToolError(res)).toBe(false);
+    expect(res).not.toHaveProperty("paymentResponse");
+    // ...and the receipt landed in the out-of-band sink for the transport.
+    expect(sink.paymentResponse).toBe("RECEIPT_BASE64");
   });
 });
 

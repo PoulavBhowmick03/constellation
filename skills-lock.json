@@ -1,0 +1,53 @@
+{
+  "version": 1,
+  "skills": {
+    "okx-agent-payments-protocol": {
+      "source": "okx/onchainos-skills",
+      "sourceType": "github",
+      "skillPath": "skills/okx-agent-payments-protocol/SKILL.md",
+      "computedHash": "1f5fc6e7cddaedef5c48390d7ac825486cc7a32fdacf0f96c686bea6a3f02b3a"
+    },
+    "okx-agentic-wallet": {
+      "source": "okx/onchainos-skills",
+      "sourceType": "github",
+      "skillPath": "skills/okx-agentic-wallet/SKILL.md",
+      "computedHash": "bd397e8035e4b4a01dc69fbef9693308d9c8ce47cf3c79d09b699a64ac68924e"
+    },
+    "okx-ai": {
+      "source": "okx/onchainos-skills",
+      "sourceType": "github",
+      "skillPath": "skills/okx-ai/SKILL.md",
+      "computedHash": "bb5ade2678ac1356f10f568a2ba2e1cf8239b925214b18fdae54be2eb5250ae3"
+    },
+    "okx-dapp-discovery": {
+      "source": "okx/onchainos-skills",
+      "sourceType": "github",
+      "skillPath": "skills/okx-dapp-discovery/SKILL.md",
+      "computedHash": "082f1f1ec7723d979f82d2abfdf6d8817829bf3c492d152c6e1eb1f167686f26"
+    },
+    "okx-defi": {
+      "source": "okx/onchainos-skills",
+      "sourceType": "github",
+      "skillPath": "skills/okx-defi/SKILL.md",
+      "computedHash": "d3dde2531301a049f12c116ba327c05d8e68a23ac78767a1300a9dbee6858856"
+    },
+    "okx-dex-market": {
+      "source": "okx/onchainos-skills",
+      "sourceType": "github",
+      "skillPath": "skills/okx-dex-market/SKILL.md",
+      "computedHash": "4a19904ece8fb4b4db83d85e73ffebc506d530cfc01728814813297daa8136ef"
+    },
+    "okx-growth-competition": {
+      "source": "okx/onchainos-skills",
+      "sourceType": "github",
+      "skillPath": "skills/okx-growth-competition/SKILL.md",
+      "computedHash": "1d235abdc8919fc3cdb85c3f27670a5f74fdc8f76eef932141f5877fb240c8e6"
+    },
+    "okx-guide": {
+      "source": "okx/onchainos-skills",
+      "sourceType": "github",
+      "skillPath": "skills/okx-guide/SKILL.md",
+      "computedHash": "eee1feb0067e0213e018104018ccfeed45382ad054d5b46bc50b19fc30bbf401"
+    }
+  }
+}

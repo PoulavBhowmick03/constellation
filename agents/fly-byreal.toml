@@ -1,0 +1,26 @@
+app = "ledgerforge-byreal"
+primary_region = "sin"
+
+[build]
+  dockerfile = "Dockerfile.byreal"
+
+[env]
+  BYREAL_SKILL_PORT         = "3006"
+  BYREAL_SKILL_PUBLIC_URL   = "https://ledgerforge-byreal.fly.dev"
+  SKILL_REGISTRY_ADDRESS    = "0x37041F257Bf8f1E201497Dc0BCDa1ae0d8317992"
+  BAZAAR_LISTINGS_ADDRESS   = "0xaB5a52C30D769A7Eae1474857A6180E71765CBAF"
+  MANTLE_RPC                = "https://rpc.mantle.xyz"
+
+[[services]]
+  internal_port = 3006
+  protocol      = "tcp"
+  [[services.ports]]
+    port     = 443
+    handlers = ["tls", "http"]
+  [[services.ports]]
+    port     = 80
+    handlers = ["http"]
+  [[services.http_checks]]
+    interval = 30000
+    path     = "/health"
+    timeout  = 5000

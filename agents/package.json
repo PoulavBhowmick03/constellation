@@ -1,0 +1,41 @@
+{
+  "name": "@ledgerforge/agents",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "tsc --noEmit",
+    "spawn-skills": "tsx src/spawn-skills.ts",
+    "spawn-server": "tsx src/spawn-skills.ts --serve",
+    "mantle-skills": "tsx src/mantle-skills.ts",
+    "mantle-server": "tsx src/mantle-skills.ts --serve",
+    "byreal-skills": "node --env-file=../.env node_modules/.bin/tsx src/byreal-skills.ts",
+    "byreal-server": "node --env-file=../.env node_modules/.bin/tsx src/byreal-skills.ts --serve",
+    "smoke-byreal": "node_modules/.bin/byreal-cli pools list --sort-field apr24h --page-size 3 -o json",
+    "elfa-skills": "node --env-file=../.env node_modules/.bin/tsx src/elfa-skills.ts",
+    "elfa-server": "node --env-file=../.env node_modules/.bin/tsx src/elfa-skills.ts --serve",
+    "smoke-elfa": "curl -s https://api.elfa.ai/v2/aggregations/trending-tokens?timeWindow=4h -H \"x-elfa-api-key: $ELFA_API_KEY\" | python3 -m json.tool | head -20",
+    "demo-consumer": "tsx src/demo-consumer.ts",
+    "simulate-clients": "node --env-file=../.env node_modules/.bin/tsx src/client-simulator.ts",
+    "scout": "node --env-file=../.env node_modules/.bin/tsx src/autonomous-scout.ts",
+    "scout:dry-run": "node --env-file=../.env node_modules/.bin/tsx src/autonomous-scout.ts --dry-run",
+    "perps-coach": "node --env-file=../.env node_modules/.bin/tsx src/perps-coach.ts",
+    "perps-coach:dry-run": "node --env-file=../.env node_modules/.bin/tsx src/perps-coach.ts --dry-run",
+    "spawn-auditor": "node --env-file=../.env node_modules/.bin/tsx src/spawn-auditor.ts",
+    "spawn-auditor:dry-run": "node --env-file=../.env node_modules/.bin/tsx src/spawn-auditor.ts --dry-run",
+    "demos:dry-run": "npm run scout:dry-run && npm run perps-coach:dry-run && npm run spawn-auditor:dry-run"
+  },
+  "dependencies": {
+    "@byreal-io/byreal-cli-realclaw": "^0.4.5",
+    "@byreal-io/byreal-perps-cli": "^0.3.7",
+    "@elfa-ai/sdk": "^2.3.4",
+    "@ishitaaaaw/x402-mantle": "^0.1.0",
+    "dotenv": "^16.4.5",
+    "viem": "^2.21.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.0",
+    "tsx": "^4.22.3",
+    "typescript": "^5.3.3"
+  }
+}

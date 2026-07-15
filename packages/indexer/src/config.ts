@@ -61,5 +61,8 @@ export function trackedTokens(): TrackedToken[] {
   return out;
 }
 
-export const INDEXER_MAX_RANGE_PER_CALL = BigInt(process.env.INDEXER_MAX_RANGE_PER_CALL ?? "2000");
+// X Layer's public RPC (rpc.xlayer.tech / xlayerrpc.okx.com) rejects any
+// eth_getLogs span > 100 blocks ("block range greater than 100 max"). The
+// default MUST stay <= that or every scan errors. Verified live 2026-07-15.
+export const INDEXER_MAX_RANGE_PER_CALL = BigInt(process.env.INDEXER_MAX_RANGE_PER_CALL ?? "100");
 export const INDEXER_START_BLOCK = BigInt(process.env.INDEXER_START_BLOCK ?? "0");

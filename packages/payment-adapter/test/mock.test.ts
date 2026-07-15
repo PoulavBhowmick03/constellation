@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   MOCK_PAYMENT_HEADER,
   MockPaymentAdapter,
+  SdkPaymentAdapter,
   createPaymentAdapter,
   type Money,
   type PriceTable,
@@ -94,7 +95,36 @@ describe("createPaymentAdapter", () => {
     expect(createPaymentAdapter({ prices, mode: "mock" })).toBeInstanceOf(MockPaymentAdapter);
   });
 
-  it("throws when asked for the unwired sdk mode", () => {
-    expect(() => createPaymentAdapter({ prices, mode: "sdk" })).toThrow(/not wired/i);
+  it("refuses sdk mode when OKX credentials are absent (fail-closed)", () => {
+    // sdk mode must never silently no-op charging: with no facilitator creds it
+    // throws, naming the exact env vars, rather than falling back to no-charge.
+    const saved = {
+      OKX_API_KEY: process.env.OKX_API_KEY,
+      OKX_SECRET_KEY: process.env.OKX_SECRET_KEY,
+      OKX_PASSPHRASE: process.env.OKX_PASSPHRASE,
+    };
+    delete process.env.OKX_API_KEY;
+    delete process.env.OKX_SECRET_KEY;
+    delete process.env.OKX_PASSPHRASE;
+    try {
+      expect(() => createPaymentAdapter({ prices, mode: "sdk" })).toThrow(/OKX_API_KEY/);
+    } finally {
+      for (const [k, v] of Object.entries(saved)) {
+        if (v === undefined) delete process.env[k];
+        else process.env[k] = v;
+      }
+    }
+  });
+
+  it("constructs the real SDK adapter when credentials are supplied", () => {
+    // Fake creds: OKXFacilitatorClient only stores config at construction, so no
+    // network call happens here — the real facilitator is contacted lazily on the
+    // first settle. This proves the selector wires SdkPaymentAdapter, not mock.
+    const adapter = createPaymentAdapter({
+      prices,
+      mode: "sdk",
+      okxCredentials: { apiKey: "k", secretKey: "s", passphrase: "p" },
+    });
+    expect(adapter).toBeInstanceOf(SdkPaymentAdapter);
   });
 });

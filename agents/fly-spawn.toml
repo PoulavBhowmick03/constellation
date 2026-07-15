@@ -1,0 +1,28 @@
+app = "ledgerforge-spawn"
+primary_region = "sin"
+
+[build]
+  dockerfile = "Dockerfile.spawn"
+
+[env]
+  SPAWN_AGENT_PORT         = "3003"
+  SPAWN_SKILL_BASE_URL     = "https://ledgerforge-spawn.fly.dev"
+  SPAWN_API_URL            = "https://spawn-protocol.example/api"
+  SKILL_REGISTRY_ADDRESS   = "0x37041F257Bf8f1E201497Dc0BCDa1ae0d8317992"
+  BAZAAR_LISTINGS_ADDRESS  = "0xaB5a52C30D769A7Eae1474857A6180E71765CBAF"
+  MANTLE_RPC               = "https://rpc.mantle.xyz"
+  MANTLE_EXPLORER          = "https://mantlescan.xyz"
+
+[[services]]
+  internal_port = 3003
+  protocol      = "tcp"
+  [[services.ports]]
+    port     = 443
+    handlers = ["tls", "http"]
+  [[services.ports]]
+    port     = 80
+    handlers = ["http"]
+  [[services.http_checks]]
+    interval = 30000
+    path     = "/health"
+    timeout  = 5000

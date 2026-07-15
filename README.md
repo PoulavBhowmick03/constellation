@@ -2,11 +2,13 @@
 
 ASPs for the OKX.AI Genesis Hackathon (July 3 to 17, 2026). The primary submission is **Treasury Copilot**, one tight, fully-shipped, listed-early A2MCP service. KYA is a conditional fast-follow; The Firm is demo narrative, not a build target. This ordering is deliberate and is the result of descoping a three-ASP plan that was over-scoped for a two-person, 11-day window.
 
-| Entry | Codename | Type | Status | Primary tracks |
+| Entry | Codename | Type | Status (as of Jul 15, eve) | Primary tracks |
 |---|---|---|---|---|
-| C | **Treasury Copilot** | A2MCP | **THE SUBMISSION. Ships complete, listed early.** | Finance Copilot, Best Product, Revenue Rocket (upside) |
-| B | **KYA: Know Your Agent** | A2MCP | Conditional: only if Treasury is live and clean by D7. Heuristic-only; ZK deferred to writeup. | Creative Genius, Finance Copilot |
-| A | **The Firm** | A2A | Narrative only. A slide and a vision, not a listed deliverable, unless everything else is done early. | (story for Creative Genius) |
+| C | **Treasury Copilot** | A2MCP | **THE SUBMISSION. LIVE at `https://constellationokx.fly.dev/mcp` with real x402 charging (`PAYMENT_MODE=sdk`). OKX facilitator auth + payment verify PROVEN on-chain (rejected only on zero balance); real HTTP 402 + `PAYMENT-REQUIRED`; free path (register→runway) verified E2E on the live endpoint; revenue math hand-verified against live X Layer data; 77 tests green. Remaining: one FUNDED settlement tx (funding-gated), 4 INTERFACES sign-offs, activate Agent 5863, demo + form.** | Finance Copilot, Best Product, Revenue Rocket (upside) |
+| B | **KYA: Know Your Agent** | A2MCP | Conditional fast-follow (only if Treasury is live+approved with slack — gate G2). Fixture-only: scoring core + handlers + 15 tests; no live-chain collector, no MCP transport. Open scoring reconciliation before listing. ZK deferred to writeup. | Creative Genius, Finance Copilot |
+| A | **The Firm** | A2A | Narrative only. DORMANT (uv stub only). A slide and a vision, not a listed deliverable, unless everything else is done early. | (story for Creative Genius) |
+
+> **⚠️ Repo-split note (Jul 15):** the working Treasury implementation (real x402 `payment-adapter`, live deploy, 77 tests) currently lives on the `migrate/celo` lineage (this tree), which has **no shared git history** with `origin/main` (constellation.git). `origin/main` separately holds `packages/mocks`, `tests/` golden evals, and `apps/dashboard` (I2/AG1 work) but an **older mock-only** `payment-adapter`/`treasury`. These two lineages must be reconciled onto one main — see `docs/status/P1.md`.
 
 ## Why this ordering (read before touching the plan)
 
@@ -40,17 +42,17 @@ KYA is more differentiated and more interesting, but it is a harder ship and its
 ```
 constellation/
   packages/
-    indexer/          X Layer chain indexer (port of LedgerForge indexer)   [ACTIVE]
-    erc8004/          ERC-8004 registry readers, chain-agnostic EVM (port)   [ACTIVE if KYA proceeds]
-    zk/               EZKL pipeline (port of CredAttest tooling)             [DEFERRED - writeup proof only]
-    swarm-utils/      Coordinator/state glue harvested from Spawn            [DORMANT - only if The Firm is built]
-    payment-adapter/  THIN wrapper around x402 endpoint (OKX SDK optional)   [ACTIVE]
-    mocks/            Mock MCP server + golden fixtures per INTERFACES.md     [ACTIVE]
+    indexer/          X Layer chain indexer (port of LedgerForge indexer)   [BUILT - X Layer port, 8/8 tests; aggregators hand-verified on live chain]
+    erc8004/          ERC-8004 registry readers, chain-agnostic EVM (port)   [BUILT - identity client + reputation stub, 4/4 tests]
+    zk/               EZKL pipeline (port of CredAttest tooling)             [NOT BUILT - deferred to writeup proof only]
+    swarm-utils/      Coordinator/state glue harvested from Spawn            [NOT BUILT - dormant, only if The Firm is built]
+    payment-adapter/  THIN wrapper around x402 endpoint (OKX SDK optional)   [BUILT - real OKX x402 sdk mode LIVE (exact/EIP-3009, non-custodial via OKX facilitator); mock default; 33 tests]
+    mocks/            Mock MCP server + golden fixtures per INTERFACES.md     [BUILT on origin/main lineage; NOT in this tree - see repo-split note]
   apps/
-    treasury/         THE SUBMISSION. MCP server. TypeScript.                [ACTIVE - priority 1]
-    kya/              Conditional. MCP server + scoring engine. TypeScript.  [ACTIVE if Treasury clean by D7]
-    firm/             Narrative only. LangGraph app. Python.                 [DORMANT]
-    dashboard/        Optional read-only demo viewer.                        [FIRST CUT]
+    treasury/         THE SUBMISSION. MCP server. TypeScript.                [LIVE + DEPLOYED - real x402 charging; 17 tests; facilitator verify proven on-chain]
+    kya/              Conditional. MCP server + scoring engine. TypeScript.  [FIXTURE-ONLY - scoring core + handlers + 15 tests; no live reads/transport]
+    firm/             Narrative only. LangGraph app. Python.                 [DORMANT - uv stub only]
+    dashboard/        Optional read-only demo viewer.                        [BUILT on origin/main lineage; NOT in this tree - see repo-split note]
   docs/
     INTERFACES.md     Tool schemas. Treasury + KYA sections are law; Firm section is deferred.
     PLAN.md           Day-by-day plan around Treasury-as-keystone.

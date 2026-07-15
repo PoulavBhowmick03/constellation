@@ -61,7 +61,17 @@ async function fetchTransferLogs(
       });
       out.push(...(logs as Log[]));
     } catch (err) {
-      console.warn(`[indexer] transfer logs ${cursor}-${end}:`, (err as Error).message);
+      // Do NOT swallow-and-continue: a persistent failure (e.g. the RPC's
+      // 100-block range cap) would otherwise index ZERO logs while the caller
+      // still marks the wallet fully scanned — reports would be silently empty.
+      // Fail loud so a misconfigured range/RPC can never masquerade as "no
+      // activity". Callers must not advance last_indexed_block on a throw.
+      const msg = (err as Error).message;
+      throw new Error(
+        `[indexer] getLogs ${cursor}-${end} failed: ${msg}. ` +
+          `If this is a block-range cap, lower INDEXER_MAX_RANGE_PER_CALL ` +
+          `(current ${INDEXER_MAX_RANGE_PER_CALL}).`,
+      );
     }
     cursor = end + 1n;
   }

@@ -1,0 +1,42 @@
+# Fly config for the Treasury Copilot MCP server (THE SUBMISSION).
+# Deploy:  fly deploy --config fly.treasury.toml
+# app name is a placeholder — `fly launch --no-deploy` or edit before first deploy.
+app = "constellationokx"
+primary_region = "sin"
+
+[build]
+  dockerfile = "Dockerfile.treasury"
+
+# Runs on a temp machine with secrets present (DATABASE_URL) before the new
+# release goes live — applies packages/indexer migrations idempotently.
+[deploy]
+  release_command = "node node_modules/@constellation/indexer/dist/migrate.js"
+
+[env]
+  TREASURY_PORT = "7801"
+  XLAYER_CHAIN_ID = "196"
+  REGISTER_NONCE_TTL_SECONDS = "600"
+  PAYMENT_MODE = "sdk"           # LIVE real x402 charging (Path B). Non-custodial via OKX facilitator; requires OKX_* secrets. Falls back safely to mock if selector is switched.
+  # SECRETS set via `fly secrets set` (NEVER in this file):
+  #   DATABASE_URL   — Fly Postgres attach
+  #   XLAYER_RPC     — verified X Layer RPC (https://rpc.xlayer.tech)
+  #   USDT_ADDRESS   — USDT0 0x779Ded0c9e1022225f8E0630b35a9b54bE713736 (verified)
+  #   USDG_ADDRESS   — 0x4ae46a509f6b1d9056937ba4500cb143933d2dc8 (verified)
+
+[http_service]
+  internal_port = 7801
+  force_https = true
+  auto_stop_machines = "stop"
+  auto_start_machines = true
+  min_machines_running = 1
+
+  [[http_service.checks]]
+    interval = "30s"
+    timeout = "5s"
+    grace_period = "10s"
+    method = "GET"
+    path = "/health"
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "512mb"

@@ -106,6 +106,13 @@ importers:
         version: 2.1.9(@types/node@20.19.43)
 
   packages/payment-adapter:
+    dependencies:
+      '@okxweb3/x402-core':
+        specifier: 0.1.0
+        version: 0.1.0
+      '@okxweb3/x402-evm':
+        specifier: 0.2.1
+        version: 0.2.1(typescript@5.9.3)
     devDependencies:
       '@types/node':
         specifier: ^20.11.0
@@ -446,6 +453,12 @@ packages:
   '@noble/hashes@1.8.0':
     resolution: {integrity: sha512-jCs9ldd7NwzpgXDIf6P3+NrHh9/sD6CQdxHyjQI+h/6rDNo88ypBxxz45UDuZHz9r3tNz7N/VInSVoVdtXEI4A==}
     engines: {node: ^14.21.3 || >=16}
+
+  '@okxweb3/x402-core@0.1.0':
+    resolution: {integrity: sha512-eXpZ51F3quf6GlDw/zwtBzirSCo9BRhdbWy4ipEoooyXE9VRpi/pRQgevKROyjNCPBAW/zpTZkqoUGfvtpyoTA==}
+
+  '@okxweb3/x402-evm@0.2.1':
+    resolution: {integrity: sha512-wdkMaoQS3dy06vQQB+a6PzBoBb5nIXTZKEYLYzmq+xtRjc+F/QzQ9dBM2+FnI31TDwN/CdI1teaPWwrcy/7LxA==}
 
   '@rollup/rollup-android-arm-eabi@4.62.2':
     resolution: {integrity: sha512-6o7ZLZK+BeenkZCFNDXqpbjw9bD6nuWonvS/lwQJp7NoVVxm6p3qE7qQ5jGuBjiFsgvqjD8mZAU5oWxTmbOeOg==}
@@ -1748,6 +1761,20 @@ snapshots:
       '@noble/hashes': 1.8.0
 
   '@noble/hashes@1.8.0': {}
+
+  '@okxweb3/x402-core@0.1.0':
+    dependencies:
+      zod: 3.25.76
+
+  '@okxweb3/x402-evm@0.2.1(typescript@5.9.3)':
+    dependencies:
+      '@okxweb3/x402-core': 0.1.0
+      viem: 2.55.2(typescript@5.9.3)(zod@3.25.76)
+      zod: 3.25.76
+    transitivePeerDependencies:
+      - bufferutil
+      - typescript
+      - utf-8-validate
 
   '@rollup/rollup-android-arm-eabi@4.62.2':
     optional: true
