@@ -120,7 +120,11 @@ function decodePaymentRequired(value: string | null): unknown {
   if (!value) return null;
   try {
     const normalized = value.replace(/-/g, "+").replace(/_/g, "/");
-    return JSON.parse(atob(normalized));
+    // Decode as UTF-8 (atob yields a binary string; multibyte chars like the ₮ in
+    // "USD₮0" would otherwise mojibake). Reinterpret the bytes through TextDecoder.
+    const binary = atob(normalized);
+    const bytes = Uint8Array.from(binary, (c) => c.charCodeAt(0));
+    return JSON.parse(new TextDecoder().decode(bytes));
   } catch {
     return { raw_header: value, decode_error: "PAYMENT-REQUIRED was not valid base64 JSON" };
   }

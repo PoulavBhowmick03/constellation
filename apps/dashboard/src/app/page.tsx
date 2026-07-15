@@ -475,7 +475,7 @@ function TreasuryView(p: TreasuryProps) {
       </section>
 
       {/* Copilot insights — live from the free get_runway response */}
-      <InsightsPanel insights={p.runway?.insights ?? []} hasRunway={p.runway !== null} />
+      <InsightsPanel insights={p.runway?.insights ?? []} hasRunway={p.runway !== null} walletId={p.walletId} />
 
       {/* Register + settlement showcase row */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -515,13 +515,33 @@ const INSIGHT_STYLE: Record<Insight["severity"], { icon: string; ring: string; t
   info: { icon: "auto_awesome", ring: "border-primary/25 bg-primary-container/5", text: "text-primary" },
 };
 
-function InsightsPanel({ insights, hasRunway }: { insights: Insight[]; hasRunway: boolean }) {
+function ShareCardButton({ walletId }: { walletId: string }) {
+  const [copied, setCopied] = useState(false);
+  return (
+    <button
+      onClick={() => {
+        const url = `${window.location.origin}/card?wallet_id=${encodeURIComponent(walletId)}`;
+        navigator.clipboard?.writeText(url);
+        setCopied(true);
+        setTimeout(() => setCopied(false), 1400);
+      }}
+      className="ml-auto flex items-center gap-1.5 text-label-sm text-on-surface-variant hover:text-primary transition-colors"
+      title="Copy a public, shareable card link for this wallet"
+    >
+      <span className="material-symbols-outlined text-[16px]">{copied ? "check" : "ios_share"}</span>
+      {copied ? "Link copied" : "Share card"}
+    </button>
+  );
+}
+
+function InsightsPanel({ insights, hasRunway, walletId }: { insights: Insight[]; hasRunway: boolean; walletId: string }) {
   return (
     <section className="glass-panel rounded-xl p-card-padding">
       <div className="flex items-center gap-2 mb-4">
         <span className="material-symbols-outlined text-primary">auto_awesome</span>
         <h2 className="font-headline-md text-headline-md">Copilot insights</h2>
         <span className="text-label-sm text-on-surface-variant uppercase tracking-wider ml-1">from live data</span>
+        {hasRunway && walletId && <ShareCardButton walletId={walletId} />}
       </div>
       {insights.length === 0 ? (
         <p className="text-body-md text-on-surface-variant">
@@ -793,8 +813,8 @@ function ReceiptModal({ onClose }: { onClose: () => void }) {
           <div className="space-y-4">
             <Row label="Status" value={<span className="text-primary flex items-center gap-1"><span className="material-symbols-outlined text-[14px]">done_all</span>Confirmed on X Layer</span>} />
             <Row label="Network" value={<span className="font-data-mono text-data-mono">eip155:196</span>} />
-            <Row label="Payer" value={<span className="font-data-mono text-data-mono bg-surface-container-low px-2 py-1 rounded">{truncate(s.payer)}</span>} />
-            <Row label="Transaction" value={<span className="font-data-mono text-data-mono bg-surface-container-low px-2 py-1 rounded">{truncate(s.tx)}</span>} />
+            <Row label="Payer" value={<span className="inline-flex items-center gap-1.5"><span className="font-data-mono text-data-mono bg-surface-container-low px-2 py-1 rounded">{truncate(s.payer)}</span><CopyButton text={s.payer} /></span>} />
+            <Row label="Transaction" value={<span className="inline-flex items-center gap-1.5"><span className="font-data-mono text-data-mono bg-surface-container-low px-2 py-1 rounded">{truncate(s.tx)}</span><CopyButton text={s.tx} /></span>} />
           </div>
           <div className="mt-8 pt-6 border-t border-outline-variant/30 flex gap-4">
             <a href={`${EXPLORER}${s.tx}`} target="_blank" rel="noreferrer" className="flex-1 bg-primary-container hover:bg-primary text-on-primary-container text-label-sm py-3 rounded-lg uppercase tracking-wider transition-colors flex items-center justify-center gap-2">
