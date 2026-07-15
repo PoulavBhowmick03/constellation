@@ -39,6 +39,19 @@ export interface ExactPaymentProcessor {
   initialize(): Promise<void>;
   verifyPayment(payload: PaymentPayload, requirements: PaymentRequirements): Promise<VerifyResponse>;
   settlePayment(payload: PaymentPayload, requirements: PaymentRequirements): Promise<SettleResponse>;
+  /**
+   * OKX timeout recovery: when settle returns status="timeout" with a tx hash,
+   * poll GET /settle/status until the chain reaches a terminal state. The x402
+   * SDK's x402ResourceServer implements this; a syncSettle window can expire
+   * before a slow block confirms, and this reclaims the result instead of
+   * leaving the buyer charged-without-delivery.
+   */
+  pollSettleStatus?(
+    txHash: string,
+    payload: PaymentPayload,
+    requirements: PaymentRequirements,
+    pollDeadlineMs?: number,
+  ): Promise<"success" | "failed" | "timeout">;
 }
 
 export interface OkxCredentials {
@@ -54,6 +67,39 @@ export interface SdkAdapterConfig {
   processor: ExactPaymentProcessor;
   now?: () => number;
   nonceCacheSize?: number;
+  /**
+   * Durable settlement store (Postgres in prod). When present it is the source
+   * of truth for replay/idempotency across processes and crashes; the in-memory
+   * nonce cache is only a fast-path. Absent = single-process in-memory only.
+   */
+  settlementStore?: SettlementStore;
+  /** Max time to poll settle/status on a timeout settle (ms). Default 25s. */
+  pollDeadlineMs?: number;
+}
+
+/**
+ * Durable record of one settlement attempt, keyed by the EIP-3009 nonce. Lets a
+ * retried/duplicated request recover the original result instead of re-charging,
+ * and lets two machines coordinate (atomic reserve). DB-agnostic on purpose so
+ * payment-adapter never imports a database driver (the isolation rule).
+ */
+export interface SettlementRecord {
+  status: "pending" | "settled" | "failed";
+  transaction?: string;
+  payer?: string;
+}
+
+export interface SettlementStore {
+  /**
+   * Atomically reserve this nonce. Returns the EXISTING record if one is already
+   * present (so a concurrent/duplicate request observes it), or null if this
+   * caller won the reservation and should proceed to verify+settle.
+   */
+  reserve(nonceKey: string): Promise<SettlementRecord | null>;
+  /** Record a terminal (or updated pending) state for the nonce. */
+  update(nonceKey: string, record: SettlementRecord): Promise<void>;
+  /** Read the current record, if any. */
+  get(nonceKey: string): Promise<SettlementRecord | null>;
 }
 
 type ExactAuthorization = {
@@ -95,6 +141,8 @@ export class SdkPaymentAdapter implements PaymentAdapter {
   private readonly processor: ExactPaymentProcessor;
   private readonly now: () => number;
   private readonly nonceCacheSize: number;
+  private readonly store?: SettlementStore;
+  private readonly pollDeadlineMs: number;
   private readonly inFlightNonces = new Set<string>();
   private readonly settledNonces = new Map<string, true>();
   private initializePromise?: Promise<void>;
@@ -104,6 +152,8 @@ export class SdkPaymentAdapter implements PaymentAdapter {
     this.processor = config.processor;
     this.now = config.now ?? Date.now;
     this.nonceCacheSize = config.nonceCacheSize ?? 10_000;
+    this.store = config.settlementStore;
+    this.pollDeadlineMs = config.pollDeadlineMs ?? 25_000;
     if (!Number.isSafeInteger(this.nonceCacheSize) || this.nonceCacheSize <= 0) {
       throw new Error("nonceCacheSize must be a positive safe integer");
     }
@@ -153,19 +203,32 @@ export class SdkPaymentAdapter implements PaymentAdapter {
       return challengeResult(price, challenge, paymentError(error));
     }
 
-    if (
-      this.inFlightNonces.has(validated.nonceKey) ||
-      this.settledNonces.has(validated.nonceKey)
-    ) {
+    // Same-process concurrent guard (both store and no-store paths use this).
+    if (this.inFlightNonces.has(validated.nonceKey)) {
       return challengeResult(price, challenge, "payment nonce was already submitted");
+    }
+
+    const requirements = paymentRequirements(challenge);
+
+    // Idempotency / cross-machine coordination. With a durable store, reserve()
+    // atomically claims the nonce and returns any PRIOR record (from this or
+    // another process). With no store, fall back to the in-memory settled set.
+    let prior: SettlementRecord | null = null;
+    if (this.store) {
+      prior = await this.store.reserve(validated.nonceKey);
+    } else if (this.settledNonces.has(validated.nonceKey)) {
+      return challengeResult(price, challenge, "payment nonce was already submitted");
+    }
+    if (prior) {
+      return this.recoverFromRecord(prior, price, challenge, validated, requirements);
     }
 
     this.inFlightNonces.add(validated.nonceKey);
     try {
       await this.initialize();
-      const requirements = paymentRequirements(challenge);
       const verified = await this.processor.verifyPayment(validated.payload, requirements);
       if (!verified.isValid || !isAddress(verified.payer)) {
+        await this.persist(validated.nonceKey, { status: "failed" });
         return challengeResult(
           price,
           challenge,
@@ -173,22 +236,47 @@ export class SdkPaymentAdapter implements PaymentAdapter {
         );
       }
       if (!sameAddress(verified.payer, validated.authorization.from)) {
+        await this.persist(validated.nonceKey, { status: "failed" });
         return challengeResult(price, challenge, "facilitator recovered a different payer");
       }
 
-      const settled = await this.processor.settlePayment(validated.payload, requirements);
-      // Consume the nonce ONLY on a fully-confirmed settlement. A pending/timeout
-      // settle can carry a tx hash that never confirms; remembering it here would
-      // poison the nonce and block a legitimate retry while the buyer is (maybe)
-      // charged — so pending/timeout stays retryable and is never remembered.
+      let settled = await this.processor.settlePayment(validated.payload, requirements);
+
+      // Timeout recovery: a syncSettle window can expire before a slow block
+      // confirms (seen live: tx landed ~60 blocks after the request). Persist the
+      // pending tx, then poll GET /settle/status until terminal rather than
+      // leaving the buyer charged-without-delivery.
       if (
-        !settled.success ||
-        settled.status !== "success" ||
-        !isTxHash(settled.transaction) ||
-        settled.network !== TREASURY_X402.network ||
-        !isAddress(settled.payer) ||
-        !sameAddress(settled.payer, verified.payer)
+        settled.status === "timeout" &&
+        isTxHash(settled.transaction) &&
+        this.processor.pollSettleStatus
       ) {
+        await this.persist(validated.nonceKey, {
+          status: "pending",
+          transaction: settled.transaction,
+          payer: verified.payer,
+        });
+        const poll = await this.processor.pollSettleStatus(
+          settled.transaction,
+          validated.payload,
+          requirements,
+          this.pollDeadlineMs,
+        );
+        if (poll === "success") {
+          settled = { ...settled, success: true, status: "success" };
+        }
+      }
+
+      if (!this.isConfirmed(settled, verified.payer)) {
+        // Not confirmed. If the tx exists but is still unconfirmed, leave the
+        // record PENDING so a later retry recovers via recoverFromRecord (and
+        // never double-charges); otherwise mark failed. Nonce is not remembered.
+        const stillPending = settled.status === "timeout" && isTxHash(settled.transaction);
+        await this.persist(validated.nonceKey, {
+          status: stillPending ? "pending" : "failed",
+          transaction: isTxHash(settled.transaction) ? settled.transaction : undefined,
+          payer: verified.payer,
+        });
         return challengeResult(
           price,
           challenge,
@@ -199,25 +287,79 @@ export class SdkPaymentAdapter implements PaymentAdapter {
       }
 
       this.rememberNonce(validated.nonceKey);
-      const response = encodePaymentResponse({
-        success: true,
-        status: "success",
+      await this.persist(validated.nonceKey, {
+        status: "settled",
         transaction: settled.transaction,
-        network: settled.network,
-        amount: price.amount,
         payer: settled.payer,
       });
-      return {
-        status: "paid",
-        price,
-        receiptId: settled.transaction,
-        paymentResponse: response,
-      };
+      return this.paidResult(price, settled.transaction, settled.payer as string);
     } catch (error) {
       return challengeResult(price, challenge, `facilitator error: ${paymentError(error)}`);
     } finally {
       this.inFlightNonces.delete(validated.nonceKey);
     }
+  }
+
+  /** A prior record for this nonce exists — recover instead of re-charging. */
+  private async recoverFromRecord(
+    prior: SettlementRecord,
+    price: Money,
+    challenge: X402Challenge,
+    validated: ValidatedPayload,
+    requirements: PaymentRequirements,
+  ): Promise<RequirePaymentResult> {
+    if (prior.status === "settled" && isTxHash(prior.transaction)) {
+      // Already paid — return the receipt, no second charge.
+      this.rememberNonce(validated.nonceKey);
+      return this.paidResult(price, prior.transaction, prior.payer ?? validated.authorization.from);
+    }
+    if (prior.status === "pending" && isTxHash(prior.transaction) && this.processor.pollSettleStatus) {
+      // A prior attempt timed out with a tx in flight — poll again.
+      const poll = await this.processor.pollSettleStatus(
+        prior.transaction,
+        validated.payload,
+        requirements,
+        this.pollDeadlineMs,
+      );
+      if (poll === "success") {
+        this.rememberNonce(validated.nonceKey);
+        await this.persist(validated.nonceKey, { status: "settled", transaction: prior.transaction, payer: prior.payer });
+        return this.paidResult(price, prior.transaction, prior.payer ?? validated.authorization.from);
+      }
+      return challengeResult(price, challenge, "settlement still pending — retry shortly");
+    }
+    return challengeResult(price, challenge, "payment nonce was already submitted");
+  }
+
+  private isConfirmed(settled: SettleResponse, verifiedPayer: string): boolean {
+    return (
+      settled.success &&
+      settled.status === "success" &&
+      isTxHash(settled.transaction) &&
+      settled.network === TREASURY_X402.network &&
+      isAddress(settled.payer) &&
+      sameAddress(settled.payer as string, verifiedPayer)
+    );
+  }
+
+  private paidResult(price: Money, transaction: string, payer: string): RequirePaymentResult {
+    return {
+      status: "paid",
+      price,
+      receiptId: transaction,
+      paymentResponse: encodePaymentResponse({
+        success: true,
+        status: "success",
+        transaction,
+        network: TREASURY_X402.network,
+        amount: price.amount,
+        payer,
+      }),
+    };
+  }
+
+  private async persist(nonceKey: string, record: SettlementRecord): Promise<void> {
+    if (this.store) await this.store.update(nonceKey, record);
   }
 
   async payAndCall<T>(

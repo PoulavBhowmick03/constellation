@@ -32,10 +32,17 @@ export type {
   ExactPaymentProcessor,
   OkxCredentials,
   SdkAdapterConfig,
+  SettlementStore,
+  SettlementRecord,
 } from "./sdk.js";
 
 import { MockPaymentAdapter } from "./mock.js";
-import { SdkPaymentAdapter, createOkxExactProcessor, type OkxCredentials } from "./sdk.js";
+import {
+  SdkPaymentAdapter,
+  createOkxExactProcessor,
+  type OkxCredentials,
+  type SettlementStore,
+} from "./sdk.js";
 import type { PaymentAdapter, PriceTable } from "./types.js";
 
 export { loadOkxCredentialsFromEnv };
@@ -50,6 +57,12 @@ export interface CreateAdapterOptions {
    * never touch a real key.
    */
   okxCredentials?: OkxCredentials;
+  /**
+   * Durable settlement store for sdk mode (Postgres in prod). Enables
+   * cross-process idempotency, timeout recovery, and crash-safe delivery. When
+   * omitted, sdk mode falls back to in-memory only (single process).
+   */
+  settlementStore?: SettlementStore;
 }
 
 /**
@@ -100,6 +113,7 @@ export function createPaymentAdapter(opts: CreateAdapterOptions): PaymentAdapter
     return new SdkPaymentAdapter({
       prices: opts.prices,
       processor: createOkxExactProcessor(credentials),
+      settlementStore: opts.settlementStore,
     });
   }
   return new MockPaymentAdapter({ prices: opts.prices });

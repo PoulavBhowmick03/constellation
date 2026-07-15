@@ -5,10 +5,13 @@ import {
   getGas,
   getLabels,
   getLatestOkbBalance,
+  getSettlement,
   getTransfers,
   getWalletById,
   issueNonce,
   registerWallet,
+  reserveSettlement,
+  updateSettlement,
 } from "@constellation/indexer";
 import { createPaymentAdapter } from "@constellation/payment-adapter";
 import { createHandlers } from "./handlers.js";
@@ -30,7 +33,16 @@ const deps = {
     issueNonce,
     consumeNonce,
   },
-  payments: createPaymentAdapter({ prices: PRICES }),
+  payments: createPaymentAdapter({
+    prices: PRICES,
+    // Durable settlement store (Postgres): cross-machine idempotency + timeout
+    // recovery + crash-safe delivery for sdk mode. Ignored in mock mode.
+    settlementStore: {
+      reserve: reserveSettlement,
+      update: updateSettlement,
+      get: getSettlement,
+    },
+  }),
   chainId: XLAYER_CHAIN_ID,
   startBlock: START_BLOCK,
   nonceTtlSeconds: NONCE_TTL,

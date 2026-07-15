@@ -218,3 +218,56 @@ export async function consumeNonce(nonce: string, address: string): Promise<Nonc
   );
   return rows.length > 0 ? { ok: true } : { ok: false, reason: "NONCE_EXPIRED" };
 }
+
+// ── Durable settlement receipts (x402 sdk-mode idempotency) ──────────────────
+
+export interface SettlementRow {
+  status: "pending" | "settled" | "failed";
+  transaction?: string;
+  payer?: string;
+}
+
+/**
+ * Atomically claim `nonceKey`. Inserts a fresh `pending` row and returns null
+ * when THIS caller won the reservation; on conflict (another request/machine got
+ * there first) returns the existing row so the caller recovers instead of
+ * re-settling. This single INSERT ... ON CONFLICT is the cross-machine guard.
+ */
+export async function reserveSettlement(nonceKey: string): Promise<SettlementRow | null> {
+  const inserted = await query<{ nonce_key: string }>(
+    `INSERT INTO payment_receipts (nonce_key, status)
+     VALUES ($1, 'pending')
+     ON CONFLICT (nonce_key) DO NOTHING
+     RETURNING nonce_key`,
+    [nonceKey],
+  );
+  if (inserted.length > 0) return null; // we won the reservation
+  return getSettlement(nonceKey);
+}
+
+export async function updateSettlement(nonceKey: string, row: SettlementRow): Promise<void> {
+  await query(
+    `INSERT INTO payment_receipts (nonce_key, status, transaction, payer)
+     VALUES ($1, $2, $3, $4)
+     ON CONFLICT (nonce_key)
+     DO UPDATE SET status = EXCLUDED.status,
+                   transaction = COALESCE(EXCLUDED.transaction, payment_receipts.transaction),
+                   payer = COALESCE(EXCLUDED.payer, payment_receipts.payer),
+                   updated_at = now()`,
+    [nonceKey, row.status, row.transaction ?? null, row.payer ?? null],
+  );
+}
+
+export async function getSettlement(nonceKey: string): Promise<SettlementRow | null> {
+  const rows = await query<{ status: SettlementRow["status"]; transaction: string | null; payer: string | null }>(
+    `SELECT status, transaction, payer FROM payment_receipts WHERE nonce_key = $1`,
+    [nonceKey],
+  );
+  const r = rows[0];
+  if (!r) return null;
+  return {
+    status: r.status,
+    transaction: r.transaction ?? undefined,
+    payer: r.payer ?? undefined,
+  };
+}

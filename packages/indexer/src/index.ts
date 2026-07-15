@@ -25,7 +25,11 @@ export {
   issueNonce,
   consumeNonce,
   setLastIndexedBlock,
+  reserveSettlement,
+  updateSettlement,
+  getSettlement,
   type WalletRow,
   type NonceCheck,
+  type SettlementRow,
 } from "./repo.js";
 export { getPool, query, closePool } from "./db.js";

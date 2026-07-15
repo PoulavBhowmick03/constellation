@@ -211,6 +211,48 @@ describe("SdkPaymentAdapter inbound exact flow", () => {
     expect(processor.settlePayment).toHaveBeenCalledTimes(2);
   });
 
+  it("recovers a timed-out settlement by polling settle/status to success", async () => {
+    // The live-observed bug: syncSettle returns timeout with a tx that confirms
+    // a bit later. With pollSettleStatus available, the adapter reclaims it and
+    // delivers instead of charging-without-result.
+    processor.settlePayment.mockResolvedValueOnce({
+      success: true,
+      status: "timeout",
+      payer: PAYER,
+      transaction: TX,
+      network: TREASURY_X402.network,
+    });
+    processor.pollSettleStatus = vi.fn(async () => "success" as const);
+    const result = await adapter.requirePayment("get_revenue_report", header(signedPayload()));
+    expect(result.status).toBe("paid");
+    expect(result.receiptId).toBe(TX);
+    expect(processor.pollSettleStatus).toHaveBeenCalledOnce();
+  });
+
+  it("recovers an already-settled nonce from the durable store without re-charging", async () => {
+    // Simulate a second request (e.g. a retry, or another Fly machine) for a
+    // nonce the store already marked settled: it must return the receipt and
+    // NEVER call settlePayment again.
+    const records = new Map<string, { status: string; transaction?: string; payer?: string }>();
+    const store = {
+      reserve: async (k: string) => records.get(k) ?? (records.set(k, { status: "pending" }), null),
+      update: async (k: string, r: { status: string; transaction?: string; payer?: string }) => {
+        records.set(k, r);
+      },
+      get: async (k: string) => records.get(k) ?? null,
+    };
+    const a = new SdkPaymentAdapter({ prices, processor, now: () => NOW_MS, settlementStore: store as never });
+    const payment = header(signedPayload());
+    const first = await a.requirePayment("get_revenue_report", payment);
+    expect(first.status).toBe("paid");
+    expect(processor.settlePayment).toHaveBeenCalledOnce();
+    // Second time: store returns the settled record → recover, no new settle.
+    const second = await a.requirePayment("get_revenue_report", payment);
+    expect(second.status).toBe("paid");
+    expect(second.receiptId).toBe(TX);
+    expect(processor.settlePayment).toHaveBeenCalledOnce(); // still once
+  });
+
   it("rejects a revenue-issued proof replayed to the equal-priced expense tool", async () => {
     // signedPayload() builds a proof for get_revenue_report (resource
     // mcp://tool/get_revenue_report). Presenting it to get_expense_report — same

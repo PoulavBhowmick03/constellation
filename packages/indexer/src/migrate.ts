@@ -6,7 +6,7 @@ import { closePool, getPool } from "./db.js";
 
 // Applies every migration in migrations/ in filename order. Idempotent: each
 // migration uses IF NOT EXISTS, and applied names are tracked in a table.
-const MIGRATIONS = ["001_init.sql"];
+const MIGRATIONS = ["001_init.sql", "002_payment_receipts.sql"];
 
 async function main(): Promise<void> {
   const here = dirname(fileURLToPath(import.meta.url));
