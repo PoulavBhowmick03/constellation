@@ -13,7 +13,9 @@
 | Real x402 charging wired (sdk mode) | ✅ | deployed `PAYMENT_MODE=sdk`; OKX facilitator authenticated + verified a real payment (rejected only on zero balance) |
 | Real HTTP 402 + `PAYMENT-REQUIRED` header | ✅ | preflight middleware; covered by `apps/treasury/test/server.test.ts` |
 | Revenue numbers hand-verified vs chain | ✅ | wallet `0x77ef18adF35f62B2Ad442e4370cDbC7fe78B7dcC`, 11 inflows = 1076.156422 USDT; 2 tx cross-checked at receipt level (see P1.md) |
-| One confirmed settlement tx | ⏳ | **blocked on funding the payer wallet** — see ANTIGRAVITY-settlement.md |
+| One confirmed settlement tx | ✅ | **tx `0xceaab66465959a25680c1efe6b37d71f0afea6cd115fd90a130288982280cc2b`** — 0.10 USD₮0 buyer→treasury, confirmed on X Layer |
+| Money path hardened (2 Codex reviews) | ✅ | durable Postgres settlement store, `settle/status` timeout polling, required resource tool-binding, precheck-before-charge, PAYMENT-RESPONSE header; 90 tests |
+| Hardened code redeployed | ⏳ | needs `fly deploy` + `fly scale count 1` (fixes are committed, not yet live) |
 | Agent ID captured | 🟡 | 5863 registered, **not activated** (24h clock not started) |
 | INTERFACES drift signed off | ⏳ | 4 items need human sign-off (DOCSYNC.md) |
 | Money-path independent review | ⏳ | Codex prompt handed off (CODEX-money-review.md) |
