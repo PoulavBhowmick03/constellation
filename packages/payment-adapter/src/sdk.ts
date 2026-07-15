@@ -247,7 +247,7 @@ export class SdkPaymentAdapter implements PaymentAdapter {
       // pending tx, then poll GET /settle/status until terminal rather than
       // leaving the buyer charged-without-delivery.
       if (
-        settled.status === "timeout" &&
+        (settled.status === "timeout" || settled.status === "pending") &&
         isTxHash(settled.transaction) &&
         this.processor.pollSettleStatus
       ) {
@@ -271,7 +271,9 @@ export class SdkPaymentAdapter implements PaymentAdapter {
         // Not confirmed. If the tx exists but is still unconfirmed, leave the
         // record PENDING so a later retry recovers via recoverFromRecord (and
         // never double-charges); otherwise mark failed. Nonce is not remembered.
-        const stillPending = settled.status === "timeout" && isTxHash(settled.transaction);
+        const stillPending =
+          (settled.status === "timeout" || settled.status === "pending") &&
+          isTxHash(settled.transaction);
         await this.persist(validated.nonceKey, {
           status: stillPending ? "pending" : "failed",
           transaction: isTxHash(settled.transaction) ? settled.transaction : undefined,
@@ -286,12 +288,21 @@ export class SdkPaymentAdapter implements PaymentAdapter {
         );
       }
 
+      // Settlement is confirmed ON-CHAIN here. Deliver unconditionally: the
+      // in-memory nonce + the PAYMENT-RESPONSE receipt carry the result, so a
+      // durable-store write failure must NOT turn a confirmed payment into a
+      // charged-without-delivery error. Persist is therefore best-effort.
       this.rememberNonce(validated.nonceKey);
-      await this.persist(validated.nonceKey, {
-        status: "settled",
-        transaction: settled.transaction,
-        payer: settled.payer,
-      });
+      try {
+        await this.persist(validated.nonceKey, {
+          status: "settled",
+          transaction: settled.transaction,
+          payer: settled.payer,
+        });
+      } catch {
+        // swallow: on-chain settlement stands; cross-process recovery is degraded
+        // for this one payment, but the buyer still gets their result now.
+      }
       return this.paidResult(price, settled.transaction, settled.payer as string);
     } catch (error) {
       return challengeResult(price, challenge, `facilitator error: ${paymentError(error)}`);
@@ -481,7 +492,13 @@ function validateExactPayload(
   return {
     payload,
     authorization: exact,
-    nonceKey: `${exact.from.toLowerCase()}:${exact.nonce.toLowerCase()}`,
+    // Scope the reservation key by the requested tool (resource), not just the
+    // EIP-3009 nonce. `resource` is unsigned and rewritable, so keying by nonce
+    // alone would let a settled proof for one tool be "recovered" as paid for a
+    // different equal-priced tool. With the resource in the key, a cross-tool
+    // replay is a NEW key -> it re-settles -> the facilitator rejects the
+    // already-used on-chain nonce. A same-tool retry still recovers idempotently.
+    nonceKey: `${exact.from.toLowerCase()}:${exact.nonce.toLowerCase()}:${expectedResourceUrl}`,
   };
 }
 

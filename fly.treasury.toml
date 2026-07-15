@@ -26,11 +26,11 @@ primary_region = "sin"
 [http_service]
   internal_port = 7801
   force_https = true
-  # SINGLE MACHINE ON PURPOSE. The sdk-mode replay/nonce guard is per-process
-  # in-memory (packages/payment-adapter SdkPaymentAdapter). Two machines would
-  # not coordinate, so exactly-once settlement requires exactly one instance.
+  # Single machine recommended. Cross-machine settlement is coordinated by the
+  # durable Postgres receipt store (payment_receipts, atomic reserve), so 2+
+  # machines will not double-settle; one instance simply keeps the fast-path
+  # in-memory nonce cache authoritative and avoids extra facilitator round-trips.
   # Enforce with: `fly scale count 1 -a constellationokx`.
-  # Multi-machine needs a durable Postgres nonce/receipt store — see docs/status/P1.md.
   auto_stop_machines = "off"
   auto_start_machines = true
   min_machines_running = 1

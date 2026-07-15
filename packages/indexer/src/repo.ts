@@ -246,6 +246,9 @@ export async function reserveSettlement(nonceKey: string): Promise<SettlementRow
 }
 
 export async function updateSettlement(nonceKey: string, row: SettlementRow): Promise<void> {
+  // Monotonic: `settled` is terminal. The WHERE guard blocks a late/slow poll
+  // from overwriting a settled record back to pending/failed while still allowing
+  // pending -> settled/failed. The tx hash is also never cleared once set.
   await query(
     `INSERT INTO payment_receipts (nonce_key, status, transaction, payer)
      VALUES ($1, $2, $3, $4)
@@ -253,7 +256,8 @@ export async function updateSettlement(nonceKey: string, row: SettlementRow): Pr
      DO UPDATE SET status = EXCLUDED.status,
                    transaction = COALESCE(EXCLUDED.transaction, payment_receipts.transaction),
                    payer = COALESCE(EXCLUDED.payer, payment_receipts.payer),
-                   updated_at = now()`,
+                   updated_at = now()
+     WHERE payment_receipts.status <> 'settled'`,
     [nonceKey, row.status, row.transaction ?? null, row.payer ?? null],
   );
 }

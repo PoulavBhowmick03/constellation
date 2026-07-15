@@ -48,6 +48,8 @@ function signedPayload(overrides: {
   accepted?: Partial<PaymentRequirements>;
   authorization?: Partial<Record<string, string>>;
   nonce?: string;
+  /** Rewrite the (unsigned) resource URL — used to model a cross-tool attack. */
+  resourceUrl?: string;
 } = {}): PaymentPayload {
   const challenge = buildExactChallenge({
     tool: "get_revenue_report",
@@ -61,7 +63,9 @@ function signedPayload(overrides: {
   });
   return {
     x402Version: 2,
-    resource: challenge.resource,
+    resource: overrides.resourceUrl
+      ? { ...challenge.resource, url: overrides.resourceUrl }
+      : challenge.resource,
     accepted: { ...challenge.accepts[0], ...overrides.accepted },
     payload: {
       signature: SIGNATURE,
@@ -227,6 +231,44 @@ describe("SdkPaymentAdapter inbound exact flow", () => {
     expect(result.status).toBe("paid");
     expect(result.receiptId).toBe(TX);
     expect(processor.pollSettleStatus).toHaveBeenCalledOnce();
+  });
+
+  it("does not let a settled nonce unlock a different equal-priced tool (store-keyed by resource)", async () => {
+    // Pay for revenue (settles + stored). Then present the SAME nonce to expense
+    // with the resource rewritten. The store key includes the resource, so this
+    // is a NEW reservation -> it re-settles rather than "recovering" the revenue
+    // payment as a paid expense report. (Live, the facilitator would reject the
+    // reused on-chain nonce; here we just prove the store never cross-unlocks.)
+    const records = new Map<string, { status: string; transaction?: string; payer?: string }>();
+    const store = {
+      reserve: async (k: string) => records.get(k) ?? (records.set(k, { status: "pending" }), null),
+      update: async (k: string, r: { status: string; transaction?: string; payer?: string }) => {
+        records.set(k, r);
+      },
+      get: async (k: string) => records.get(k) ?? null,
+    };
+    const a = new SdkPaymentAdapter({ prices, processor, now: () => NOW_MS, settlementStore: store as never });
+    const NONCE = `0x${"77".repeat(32)}`;
+    // Revenue settles and is stored under key payer:nonce:mcp://tool/get_revenue_report.
+    expect(
+      (await a.requirePayment("get_revenue_report", header(signedPayload({ nonce: NONCE })))).status,
+    ).toBe("paid");
+    expect(processor.settlePayment).toHaveBeenCalledTimes(1);
+
+    // Attack: SAME nonce, resource rewritten to the expense tool so it passes the
+    // resource-equality check, presented to get_expense_report. The store key now
+    // differs (…:get_expense_report), so it is NOT recovered as the revenue
+    // payment — it is a fresh reservation that re-settles. (Live: the facilitator
+    // rejects the reused on-chain nonce, so no second charge; here the mock has no
+    // on-chain nonce, so what we assert is that NO false recovery occurred.)
+    const attack = await a.requirePayment(
+      "get_expense_report",
+      header(signedPayload({ nonce: NONCE, resourceUrl: "mcp://tool/get_expense_report" })),
+    );
+    // The key point: settlePayment was invoked AGAIN (no idempotent cross-unlock),
+    // proving the revenue receipt was never handed back for an expense call.
+    expect(processor.settlePayment).toHaveBeenCalledTimes(2);
+    expect(attack.receiptId).not.toBe(undefined);
   });
 
   it("recovers an already-settled nonce from the durable store without re-charging", async () => {
