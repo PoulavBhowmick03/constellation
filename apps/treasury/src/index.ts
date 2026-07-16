@@ -40,7 +40,12 @@ const SCAN_INTERVAL_MS = Number(process.env.INDEXER_SCAN_INTERVAL_MS ?? 0);
 async function resolveStartBlock(): Promise<number> {
   if (ENV_START_BLOCK > 0) return ENV_START_BLOCK;
   try {
-    const head = Number(await getPublicClient().getBlockNumber());
+    // Timeout-bound: startup must never hang on a slow/flaky RPC (fly-proxy
+    // marks the app unreachable if listen() is delayed past its socket check).
+    const timeout = new Promise<never>((_, rej) =>
+      setTimeout(() => rej(new Error("head lookup timed out")), 8000),
+    );
+    const head = Number(await Promise.race([getPublicClient().getBlockNumber(), timeout]));
     return Math.max(0, head - REGISTER_LOOKBACK_BLOCKS);
   } catch (err) {
     console.warn(`[treasury] head lookup failed, indexing new wallets from 0: ${(err as Error).message}`);
