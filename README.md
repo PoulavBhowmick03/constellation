@@ -9,7 +9,7 @@ that. It reads a wallet's on-chain history and returns clean revenue, expense, g
 reports — the way a bookkeeper would, but as a service another agent can call and pay for per
 request.
 
-- **Live endpoint (A2MCP):** `https://constellationokx.fly.dev/mcp`
+- [Live endpoint (A2MCP)](https://constellationokx.fly.dev/mcp)
 - **OKX Agent ID:** `5863`
 - **Network:** X Layer (`eip155:196`)
 - **Settlement asset:** USD₮0 — `0x779Ded0c9e1022225f8E0630b35a9b54bE713736`
