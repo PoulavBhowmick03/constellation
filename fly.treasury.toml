@@ -17,6 +17,12 @@ primary_region = "sin"
   XLAYER_CHAIN_ID = "196"
   REGISTER_NONCE_TTL_SECONDS = "600"
   PAYMENT_MODE = "sdk"           # LIVE real x402 charging (Path B). Non-custodial via OKX facilitator; requires OKX_* secrets. Falls back safely to mock if selector is switched.
+  # Background wallet indexer (in-process). Kicks once at boot (backfills), then
+  # every interval. 0 would disable it. RPC delay paces the public X Layer RPC,
+  # which throttles ("over rate limit") on top of its 100-block getLogs cap.
+  INDEXER_SCAN_INTERVAL_MS = "900000"   # 15 min
+  INDEXER_RPC_DELAY_MS = "200"          # gap between getLogs chunks
+  INDEXER_REGISTER_LOOKBACK = "200000"  # new wallets index ~last 200k blocks, not genesis
   # SECRETS set via `fly secrets set` (NEVER in this file):
   #   DATABASE_URL   — Fly Postgres attach
   #   XLAYER_RPC     — verified X Layer RPC (https://rpc.xlayer.tech)

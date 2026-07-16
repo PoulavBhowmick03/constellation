@@ -18,6 +18,45 @@ const ERC20_TRANSFER_EVENT = parseAbiItem(
   "event Transfer(address indexed from, address indexed to, uint256 value)",
 );
 
+// X Layer's public RPC throttles aggressively ("over rate limit") on top of its
+// 100-block getLogs cap. A backfill spanning tens of thousands of blocks issues
+// hundreds of chunked calls, so we pace them and retry transient throttling with
+// exponential backoff. Tunable via env so a paid/dedicated RPC can go faster.
+const RPC_CALL_DELAY_MS = Number(process.env.INDEXER_RPC_DELAY_MS ?? "120");
+const RPC_MAX_RETRIES = Number(process.env.INDEXER_RPC_MAX_RETRIES ?? "6");
+
+const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms));
+
+// A throttling error is transient (back off + retry); a range-cap or other
+// request error is a real misconfiguration and must fail loud (see below).
+function isRateLimit(err: unknown): boolean {
+  const msg = (err as Error)?.message?.toLowerCase() ?? "";
+  return (
+    msg.includes("over rate limit") ||
+    msg.includes("rate limit") ||
+    msg.includes("too many requests") ||
+    msg.includes("429")
+  );
+}
+
+// Retry ONLY rate-limit errors with exponential backoff; rethrow everything
+// else immediately so a genuine bug (bad range, wrong RPC) never hides behind
+// retries. Returns the call's result on success.
+async function withRateLimitRetry<T>(fn: () => Promise<T>): Promise<T> {
+  let attempt = 0;
+  for (;;) {
+    try {
+      return await fn();
+    } catch (err) {
+      if (!isRateLimit(err) || attempt >= RPC_MAX_RETRIES) throw err;
+      const backoff = Math.min(500 * 2 ** attempt, 8000);
+      attempt += 1;
+      console.warn(`[indexer] rate limited, backoff ${backoff}ms (attempt ${attempt}/${RPC_MAX_RETRIES})`);
+      await sleep(backoff);
+    }
+  }
+}
+
 // Block-timestamp cache — harvested from the LedgerForge indexer so a rescan of
 // overlapping ranges doesn't re-hit getBlock for the same height.
 const blockTimestampCache = new Map<string, number>();
@@ -25,7 +64,7 @@ async function blockTimeISO(client: PublicClient, blockNumber: bigint): Promise<
   const key = blockNumber.toString();
   let ts = blockTimestampCache.get(key);
   if (ts === undefined) {
-    const block = await client.getBlock({ blockNumber });
+    const block = await withRateLimitRetry(() => client.getBlock({ blockNumber }));
     ts = Number(block.timestamp);
     blockTimestampCache.set(key, ts);
   }
@@ -52,14 +91,17 @@ async function fetchTransferLogs(
         ? toBlock
         : cursor + INDEXER_MAX_RANGE_PER_CALL - 1n;
     try {
-      const logs = await client.getLogs({
-        address: token,
-        event: ERC20_TRANSFER_EVENT,
-        args: filter,
-        fromBlock: cursor,
-        toBlock: end,
-      });
+      const logs = await withRateLimitRetry(() =>
+        client.getLogs({
+          address: token,
+          event: ERC20_TRANSFER_EVENT,
+          args: filter,
+          fromBlock: cursor,
+          toBlock: end,
+        }),
+      );
       out.push(...(logs as Log[]));
+      if (RPC_CALL_DELAY_MS > 0) await sleep(RPC_CALL_DELAY_MS);
     } catch (err) {
       // Do NOT swallow-and-continue: a persistent failure (e.g. the RPC's
       // 100-block range cap) would otherwise index ZERO logs while the caller
@@ -116,7 +158,7 @@ async function recordGasForTx(
   blockTime: string,
 ): Promise<void> {
   // Only count gas for txs the wallet actually paid for (wallet is tx.from).
-  const receipt = await client.getTransactionReceipt({ hash: txHash });
+  const receipt = await withRateLimitRetry(() => client.getTransactionReceipt({ hash: txHash }));
   if (getAddress(receipt.from).toLowerCase() !== wallet.address.toLowerCase()) return;
   const gasUsed = receipt.gasUsed;
   const gasPrice = receipt.effectiveGasPrice;
@@ -195,7 +237,7 @@ export async function scanWallet(client: PublicClient, walletId: string): Promis
     return;
   }
 
-  const head = await client.getBlockNumber();
+  const head = await withRateLimitRetry(() => client.getBlockNumber());
   const fromBlock = BigInt(Math.max(wallet.indexedFromBlock, wallet.lastIndexedBlock + 1));
 
   for (const token of tokens) {
@@ -203,7 +245,9 @@ export async function scanWallet(client: PublicClient, walletId: string): Promis
   }
 
   // Current native OKB balance snapshot at head.
-  const balance = await client.getBalance({ address: wallet.address as `0x${string}` });
+  const balance = await withRateLimitRetry(() =>
+    client.getBalance({ address: wallet.address as `0x${string}` }),
+  );
   const headTime = await blockTimeISO(client, head);
   await insertBalanceSnapshot(wallet.id, Number(head), headTime, balance.toString());
 
