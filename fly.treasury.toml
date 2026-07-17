@@ -23,6 +23,9 @@ primary_region = "sin"
   INDEXER_SCAN_INTERVAL_MS = "900000"   # 15 min
   INDEXER_RPC_DELAY_MS = "200"          # gap between getLogs chunks
   INDEXER_REGISTER_LOOKBACK = "200000"  # new wallets index ~last 200k blocks, not genesis
+  # Public base for the plain-HTTP /services/* x402 endpoints (resource.url in
+  # the PAYMENT-REQUIRED challenge must be the real public https URL).
+  PUBLIC_BASE_URL = "https://constellationokx.fly.dev"
   # SECRETS set via `fly secrets set` (NEVER in this file):
   #   DATABASE_URL   — Fly Postgres attach
   #   XLAYER_RPC     — verified X Layer RPC (https://rpc.xlayer.tech)

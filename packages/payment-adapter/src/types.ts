@@ -19,6 +19,13 @@ export interface PaymentContext {
   /** Wallet the call is being made on behalf of, if known. */
   callerWallet?: string;
   /**
+   * Overrides the x402 challenge's resource URL (and the settle-time resource
+   * binding) for this request. The MCP surface leaves it unset (mcp://tool/<t>);
+   * the plain-HTTP service routes set their public https URL, matching the shape
+   * OKX's listing validator expects (`resource.url: https://<endpoint>`).
+   */
+  resourceUrl?: string;
+  /**
    * Output channel for the x402 settlement receipt. When a caller supplies this
    * object, a tool that settles a real payment writes the base64 PAYMENT-RESPONSE
    * carrier into it, so the transport can echo it back to the payer WITHOUT

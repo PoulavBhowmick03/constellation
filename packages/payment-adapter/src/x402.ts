@@ -30,6 +30,12 @@ export interface BuildChallengeInput {
   assetDomainName?: string;
   assetDomainVersion?: string;
   maxTimeoutSeconds?: number;
+  /**
+   * Resource URL advertised in the challenge and enforced at settle time.
+   * Defaults to the MCP-internal mcp://tool/<tool>; plain-HTTP service routes
+   * pass their public https URL (the shape OKX's listing validator checks).
+   */
+  resourceUrl?: string;
 }
 
 /** CAIP-2 network id for an EVM chain. */
@@ -70,7 +76,7 @@ export function buildExactChallenge(input: BuildChallengeInput): X402Challenge {
   return {
     x402Version: 2,
     resource: {
-      url: `mcp://tool/${encodeURIComponent(input.tool)}`,
+      url: input.resourceUrl ?? `mcp://tool/${encodeURIComponent(input.tool)}`,
       description: `Paid MCP tool: ${input.tool}`,
       mimeType: "application/json",
     },

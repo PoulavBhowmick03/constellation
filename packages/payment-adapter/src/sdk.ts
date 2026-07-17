@@ -181,6 +181,7 @@ export class SdkPaymentAdapter implements PaymentAdapter {
       assetDomainName: TREASURY_X402.assetDomainName,
       assetDomainVersion: TREASURY_X402.assetDomainVersion,
       maxTimeoutSeconds: TREASURY_X402.maxTimeoutSeconds,
+      resourceUrl: ctx.resourceUrl,
     });
 
     const header = readPaymentHeader(ctx.headers);
