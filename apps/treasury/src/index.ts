@@ -18,6 +18,7 @@ import {
 import { createPaymentAdapter } from "@constellation/payment-adapter";
 import { createHandlers } from "./handlers.js";
 import { PRICES } from "./prices.js";
+import { TOOL_DESCRIPTORS } from "./descriptors.js";
 import { createApp } from "./server.js";
 
 const PORT = Number(process.env.TREASURY_PORT ?? 7801);
@@ -95,6 +96,7 @@ async function main(): Promise<void> {
     },
     payments: createPaymentAdapter({
       prices: PRICES,
+      descriptors: TOOL_DESCRIPTORS,
       // Durable settlement store (Postgres): cross-machine idempotency + timeout
       // recovery + crash-safe delivery for sdk mode. Ignored in mock mode.
       settlementStore: {

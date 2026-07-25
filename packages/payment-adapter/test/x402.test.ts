@@ -5,6 +5,7 @@ import {
   decodePaymentPayload,
   decodePaymentRequired,
   encodePaymentRequired,
+  readClaimedPayer,
   X402_HEADERS,
 } from "../src/x402.js";
 import type { Money } from "../src/types.js";
@@ -37,10 +38,10 @@ describe("buildExactChallenge", () => {
       extra: {
         name: "USD₮0",
         version: "1",
-        assetTransferMethod: "eip3009",
-        decimals: 6,
       },
     });
+    expect(ch.accepts[0].extra).not.toHaveProperty("assetTransferMethod");
+    expect(ch.accepts[0].extra).not.toHaveProperty("decimals");
   });
 
   it("rejects number-coercing or invalid challenge inputs", () => {
@@ -87,5 +88,95 @@ describe("constants", () => {
     expect(X402_HEADERS.xPayment).toBe("X-PAYMENT");
     expect(X402_HEADERS.paymentResponse).toBe("PAYMENT-RESPONSE");
     expect(caip2(196)).toBe("eip155:196");
+  });
+});
+
+describe("advertised tool descriptors", () => {
+  const descriptor = {
+    description: "Incoming totals. wallet_id defaults to the paying wallet.",
+    input: {
+      type: "http" as const,
+      method: "POST",
+      bodyType: "json" as const,
+      body: {
+        type: "object" as const,
+        properties: { wallet_id: { type: "string", description: "Registered wallet id" } },
+        required: [] as string[],
+      },
+    },
+  };
+
+  const ch = buildExactChallenge({
+    tool: "get_revenue_report",
+    price: price("100000"),
+    payTo: OWNER,
+    asset: USDT0,
+    chainId: 196,
+    assetDomainName: "USD₮0",
+    resourceUrl: "https://example.test/services/revenue-report",
+    descriptor,
+  });
+
+  it("advertises the input schema under the top-level extensions.bazaar key", () => {
+    // Deliberate: the SDK's PaymentRequirementsSchema STRIPS an `outputSchema`
+    // placed on an accepts entry, and `extra` is the signed EIP-712 domain.
+    // `extensions` is the only slot that survives the SDK's own validation.
+    expect((ch as Record<string, unknown>).extensions).toEqual({
+      bazaar: { outputSchema: { input: descriptor.input } },
+    });
+    expect(ch.accepts[0]).not.toHaveProperty("outputSchema");
+  });
+
+  it("uses the descriptor prose as the advertised resource description", () => {
+    expect(ch.resource.description).toBe(descriptor.description);
+  });
+
+  it("omits extensions entirely when no input schema is declared", () => {
+    const bare = buildExactChallenge({
+      tool: "get_runway",
+      price: price("100000"),
+      payTo: OWNER,
+      asset: USDT0,
+      chainId: 196,
+    });
+    expect(bare).not.toHaveProperty("extensions");
+    expect(bare.resource.description).toBe("Paid MCP tool: get_runway");
+  });
+
+  it("survives the OKX SDK's own PaymentRequired validation intact", async () => {
+    // The local builder is the fallback used when the facilitator is
+    // unreachable. It must not be a degraded shape.
+    const { validatePaymentRequired } = await import("@okxweb3/x402-core/schemas");
+    const parsed = validatePaymentRequired(ch) as Record<string, unknown>;
+    const out = (parsed.data ?? parsed) as Record<string, unknown>;
+    expect(out.x402Version).toBe(2);
+    expect(out.extensions).toEqual({ bazaar: { outputSchema: { input: descriptor.input } } });
+    expect((out.accepts as unknown[])[0]).toMatchObject({ scheme: "exact", amount: "100000" });
+  });
+});
+
+describe("readClaimedPayer", () => {
+  const payload = (from: unknown) =>
+    Buffer.from(
+      JSON.stringify({ x402Version: 2, payload: { authorization: { from } } }),
+      "utf-8",
+    ).toString("base64");
+
+  it("reads the claimed payer from the v2 payment header", () => {
+    const headers = { [X402_HEADERS.paymentSignature.toLowerCase()]: payload(OWNER) };
+    expect(readClaimedPayer(headers)).toBe(OWNER);
+  });
+
+  it("reads the claimed payer from the legacy X-PAYMENT header", () => {
+    const headers = { [X402_HEADERS.xPayment.toLowerCase()]: payload(OWNER) };
+    expect(readClaimedPayer(headers)).toBe(OWNER);
+  });
+
+  it("returns null for a missing, malformed, or non-address payer", () => {
+    expect(readClaimedPayer(undefined)).toBeNull();
+    expect(readClaimedPayer({})).toBeNull();
+    expect(readClaimedPayer({ [X402_HEADERS.paymentSignature.toLowerCase()]: "!!not-base64!!" })).toBeNull();
+    expect(readClaimedPayer({ [X402_HEADERS.paymentSignature.toLowerCase()]: payload("nope") })).toBeNull();
+    expect(readClaimedPayer({ [X402_HEADERS.paymentSignature.toLowerCase()]: payload(42) })).toBeNull();
   });
 });

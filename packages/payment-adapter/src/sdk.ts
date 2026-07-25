@@ -2,7 +2,9 @@ import { OKXFacilitatorClient } from "@okxweb3/x402-core";
 import { x402ResourceServer } from "@okxweb3/x402-core/server";
 import type {
   PaymentPayload,
+  PaymentRequired,
   PaymentRequirements,
+  ResourceInfo,
   SettleResponse,
   VerifyResponse,
 } from "@okxweb3/x402-core/types";
@@ -16,18 +18,21 @@ import type {
   RequirePaymentResult,
 } from "./types.js";
 import {
+  bazaarExtensions,
   buildExactChallenge,
   decodePaymentPayload,
   encodePaymentResponse,
   paymentRequirements,
   X402_HEADERS,
+  type ToolDescriptor,
   type X402Challenge,
 } from "./x402.js";
 
 export const TREASURY_X402 = {
   chainId: 196,
   network: "eip155:196",
-  asset: "0x779Ded0c9e1022225f8E0630b35a9b54bE713736",
+  // Match the OKX SDK's canonical X Layer asset address byte-for-byte.
+  asset: "0x779ded0c9e1022225f8e0630b35a9b54be713736",
   payTo: "0x212e82dc1d13b991d5318d970963f5ddfd81a178",
   assetDomainName: "USD₮0",
   assetDomainVersion: "1",
@@ -35,8 +40,32 @@ export const TREASURY_X402 = {
   maxTimeoutSeconds: 300,
 } as const;
 
+/**
+ * Narrow structural subset of the OKX SDK ResourceConfig used here. Keeping the
+ * SDK's broad HTTP-server type out of our public declarations prevents its Node
+ * transport globals from leaking into SDK-agnostic workspace consumers.
+ */
+export interface ExactResourceConfig {
+  scheme: "exact";
+  payTo: string;
+  price: {
+    asset: string;
+    amount: string;
+    extra?: Record<string, unknown>;
+  };
+  network: `eip155:${number}`;
+  maxTimeoutSeconds?: number;
+}
+
 export interface ExactPaymentProcessor {
   initialize(): Promise<void>;
+  buildPaymentRequirements(resourceConfig: ExactResourceConfig): Promise<PaymentRequirements[]>;
+  createPaymentRequiredResponse(
+    requirements: PaymentRequirements[],
+    resourceInfo: ResourceInfo,
+    error?: string,
+    extensions?: Record<string, unknown>,
+  ): Promise<PaymentRequired>;
   verifyPayment(payload: PaymentPayload, requirements: PaymentRequirements): Promise<VerifyResponse>;
   settlePayment(payload: PaymentPayload, requirements: PaymentRequirements): Promise<SettleResponse>;
   /**
@@ -75,6 +104,12 @@ export interface SdkAdapterConfig {
   settlementStore?: SettlementStore;
   /** Max time to poll settle/status on a timeout settle (ms). Default 25s. */
   pollDeadlineMs?: number;
+  /**
+   * Per-tool advertised prose + argument declaration. Without this a buyer has
+   * no way to learn which business arguments a paid replay must carry, and its
+   * first paid call fails on a missing argument.
+   */
+  descriptors?: Record<string, ToolDescriptor>;
 }
 
 /**
@@ -143,6 +178,7 @@ export class SdkPaymentAdapter implements PaymentAdapter {
   private readonly nonceCacheSize: number;
   private readonly store?: SettlementStore;
   private readonly pollDeadlineMs: number;
+  private readonly descriptors: Record<string, ToolDescriptor>;
   private readonly inFlightNonces = new Set<string>();
   private readonly settledNonces = new Map<string, true>();
   private initializePromise?: Promise<void>;
@@ -154,6 +190,7 @@ export class SdkPaymentAdapter implements PaymentAdapter {
     this.nonceCacheSize = config.nonceCacheSize ?? 10_000;
     this.store = config.settlementStore;
     this.pollDeadlineMs = config.pollDeadlineMs ?? 25_000;
+    this.descriptors = config.descriptors ?? {};
     if (!Number.isSafeInteger(this.nonceCacheSize) || this.nonceCacheSize <= 0) {
       throw new Error("nonceCacheSize must be a positive safe integer");
     }
@@ -172,17 +209,7 @@ export class SdkPaymentAdapter implements PaymentAdapter {
       return misconfigured(tool, "configured price must use 6 decimals for USDT0");
     }
 
-    const challenge = buildExactChallenge({
-      tool,
-      price,
-      payTo: TREASURY_X402.payTo,
-      asset: TREASURY_X402.asset,
-      chainId: TREASURY_X402.chainId,
-      assetDomainName: TREASURY_X402.assetDomainName,
-      assetDomainVersion: TREASURY_X402.assetDomainVersion,
-      maxTimeoutSeconds: TREASURY_X402.maxTimeoutSeconds,
-      resourceUrl: ctx.resourceUrl,
-    });
+    const { challenge, requirements } = await this.buildChallenge(tool, price, ctx);
 
     const header = readPaymentHeader(ctx.headers);
     if (!header.ok) return challengeResult(price, challenge, header.reason);
@@ -196,7 +223,7 @@ export class SdkPaymentAdapter implements PaymentAdapter {
       const payload = decodePaymentPayload(header.value);
       validated = validateExactPayload(
         payload,
-        paymentRequirements(challenge),
+        requirements,
         this.now(),
         challenge.resource.url,
       );
@@ -208,8 +235,6 @@ export class SdkPaymentAdapter implements PaymentAdapter {
     if (this.inFlightNonces.has(validated.nonceKey)) {
       return challengeResult(price, challenge, "payment nonce was already submitted");
     }
-
-    const requirements = paymentRequirements(challenge);
 
     // Idempotency / cross-machine coordination. With a durable store, reserve()
     // atomically claims the nonce and returns any PRIOR record (from this or
@@ -226,7 +251,6 @@ export class SdkPaymentAdapter implements PaymentAdapter {
 
     this.inFlightNonces.add(validated.nonceKey);
     try {
-      await this.initialize();
       const verified = await this.processor.verifyPayment(validated.payload, requirements);
       if (!verified.isValid || !isAddress(verified.payer)) {
         await this.persist(validated.nonceKey, { status: "failed" });
@@ -389,6 +413,77 @@ export class SdkPaymentAdapter implements PaymentAdapter {
     };
   }
 
+  /**
+   * Build the advertised terms + PaymentRequired object.
+   *
+   * Prefers the official OKX SDK so the wire contract is byte-identical to the
+   * reference server. Falls back to the local builder if the SDK path fails —
+   * `initialize()` performs an authenticated `getSupported()` call to the
+   * facilitator, so without this fallback a facilitator outage would turn an
+   * unpaid request into a 500 instead of the 402 the listing check requires.
+   * The fallback is not a degraded shape: it is byte-equivalent under the SDK's
+   * own `validatePaymentRequired`, verified in x402.test.ts.
+   */
+  private async buildChallenge(
+    tool: string,
+    price: Money,
+    ctx: PaymentContext,
+  ): Promise<{ challenge: X402Challenge; requirements: PaymentRequirements }> {
+    const descriptor = this.descriptors[tool];
+    const resourceUrl = ctx.resourceUrl ?? `mcp://tool/${encodeURIComponent(tool)}`;
+    const extensions = bazaarExtensions(descriptor);
+    try {
+      await this.initialize();
+      const requirementsList = await this.processor.buildPaymentRequirements({
+        scheme: "exact",
+        network: TREASURY_X402.network,
+        payTo: TREASURY_X402.payTo,
+        price: {
+          asset: TREASURY_X402.asset,
+          amount: price.amount,
+          extra: {
+            name: TREASURY_X402.assetDomainName,
+            version: TREASURY_X402.assetDomainVersion,
+          },
+        },
+        maxTimeoutSeconds: TREASURY_X402.maxTimeoutSeconds,
+      });
+      if (requirementsList.length !== 1) {
+        throw new Error(`OKX SDK produced ${requirementsList.length} payment options; expected one`);
+      }
+      const resource: ResourceInfo = {
+        url: resourceUrl,
+        description: descriptor?.description ?? `Paid MCP tool: ${tool}`,
+        mimeType: "application/json",
+      };
+      const challenge = (await this.processor.createPaymentRequiredResponse(
+        requirementsList,
+        resource,
+        "Payment required",
+        extensions,
+      )) as X402Challenge;
+      return { challenge, requirements: requirementsList[0]! };
+    } catch (error) {
+      console.warn(
+        `[payment-adapter] SDK challenge build failed for "${tool}", using local fallback:`,
+        (error as Error).message,
+      );
+      const challenge = buildExactChallenge({
+        tool,
+        price,
+        payTo: TREASURY_X402.payTo,
+        asset: TREASURY_X402.asset,
+        chainId: TREASURY_X402.chainId,
+        assetDomainName: TREASURY_X402.assetDomainName,
+        assetDomainVersion: TREASURY_X402.assetDomainVersion,
+        maxTimeoutSeconds: TREASURY_X402.maxTimeoutSeconds,
+        resourceUrl,
+        descriptor,
+      });
+      return { challenge, requirements: paymentRequirements(challenge) };
+    }
+  }
+
   private initialize(): Promise<void> {
     if (this.initializePromise === undefined) {
       this.initializePromise = this.processor.initialize().catch((error: unknown) => {
@@ -526,12 +621,16 @@ function challengeResult(
   return {
     status: "payment_required",
     price,
+    diagnostic: reason,
     challenge: {
-      reason,
-      error: reason,
+      error: challenge.error,
       x402Version: challenge.x402Version,
       resource: { ...challenge.resource },
       accepts: challenge.accepts.map((option) => ({ ...option })),
+      // Must be carried through: this object IS what the transport encodes into
+      // the PAYMENT-REQUIRED header, so dropping it here strips the advertised
+      // argument schema off the wire.
+      ...(challenge.extensions ? { extensions: { ...challenge.extensions } } : {}),
     },
   };
 }

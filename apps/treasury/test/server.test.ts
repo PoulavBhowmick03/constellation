@@ -215,3 +215,134 @@ describe("plain-HTTP /services routes", () => {
     await run.text();
   });
 });
+
+// A paying caller has already proven control of its address by signing the
+// EIP-3009 authorization, so omitting wallet_id should resolve to that wallet
+// rather than failing a call it has already paid for.
+describe("paid-call argument defaulting", () => {
+  let server: Server;
+  let base: string;
+  let ledger: MemoryLedger;
+
+  const PAYER = "0x4444444444444444444444444444444444444444";
+  const PAYER_WALLET = "w_444444444444";
+
+  /** A PAYMENT-SIGNATURE carrier the adapter can read a claimed payer from. */
+  function payerHeader(from = PAYER): Record<string, string> {
+    const payload = { x402Version: 2, payload: { authorization: { from } } };
+    return {
+      "payment-signature": Buffer.from(JSON.stringify(payload), "utf-8").toString("base64"),
+    };
+  }
+
+  beforeAll(async () => {
+    ledger = new MemoryLedger();
+    const app = createApp({
+      ledger,
+      payments: new MockPaymentAdapter({ prices: PRICES }),
+      chainId: 196,
+      startBlock: 0,
+      nonceTtlSeconds: 600,
+    });
+    server = await new Promise<Server>((resolve) => {
+      const s = app.listen(0, () => resolve(s));
+    });
+    base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+  });
+
+  afterAll(() => {
+    server?.close();
+  });
+
+  it("defaults wallet_id to the paying wallet and registers it on first use", async () => {
+    expect(await ledger.getWalletById(PAYER_WALLET)).toBeNull();
+
+    const res = await fetch(`${base}/services/revenue-report`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        [MOCK_PAYMENT_HEADER]: "any",
+        ...payerHeader(),
+      },
+      body: JSON.stringify({}),
+    });
+
+    expect(res.status).toBe(200);
+    const json = (await res.json()) as { error?: unknown };
+    expect(json.error).toBeUndefined();
+    // Registration is a side effect of the paid call, keyed to the payer.
+    const registered = await ledger.getWalletById(PAYER_WALLET);
+    expect(registered?.address.toLowerCase()).toBe(PAYER.toLowerCase());
+  });
+
+  it("lets an explicit wallet_id win over the paying wallet", async () => {
+    const other = await ledger.registerWallet(
+      "0x5555555555555555555555555555555555555555",
+      196,
+      0,
+    );
+    const res = await fetch(`${base}/services/revenue-report`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        [MOCK_PAYMENT_HEADER]: "any",
+        ...payerHeader(),
+      },
+      body: JSON.stringify({ wallet_id: other.id }),
+    });
+    expect(res.status).toBe(200);
+    await res.text();
+  });
+
+  it("defaults an omitted export format to json", async () => {
+    const res = await fetch(`${base}/services/export-statement`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        [MOCK_PAYMENT_HEADER]: "any",
+        ...payerHeader(),
+      },
+      body: JSON.stringify({}),
+    });
+    expect(res.status).toBe(200);
+    await res.text();
+  });
+
+  it("still rejects an invalid explicit format rather than overriding it", async () => {
+    const res = await fetch(`${base}/services/export-statement`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        [MOCK_PAYMENT_HEADER]: "any",
+        ...payerHeader(),
+      },
+      body: JSON.stringify({ format: "pdf" }),
+    });
+    expect(res.status).toBe(400);
+    await res.text();
+  });
+
+  it("reports the missing argument when no payer can be derived", async () => {
+    const res = await fetch(`${base}/services/revenue-report`, {
+      method: "POST",
+      headers: { "content-type": "application/json", [MOCK_PAYMENT_HEADER]: "any" },
+      body: JSON.stringify({}),
+    });
+    expect(res.status).toBe(400);
+    const json = (await res.json()) as { error?: { message?: string } };
+    expect(json.error?.message).toContain("wallet_id is required");
+  });
+
+  it("does not register a wallet for an unpaid request", async () => {
+    const before = ledger.wallets.size;
+    const res = await fetch(`${base}/services/revenue-report`, {
+      method: "POST",
+      headers: { "content-type": "application/json", ...payerHeader("0x6666666666666666666666666666666666666666") },
+      body: JSON.stringify({}),
+    });
+    // A PAYMENT-SIGNATURE alone is not payment in mock mode; it must 402.
+    expect(res.status).toBe(402);
+    await res.text();
+    expect(ledger.wallets.size).toBe(before);
+  });
+});

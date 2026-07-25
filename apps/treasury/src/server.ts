@@ -5,6 +5,7 @@ import { z } from "zod";
 import type { PaymentContext } from "@constellation/payment-adapter";
 import {
   encodePaymentRequired,
+  readClaimedPayer,
   MOCK_PAYMENT_HEADER,
   X402_HEADERS,
 } from "@constellation/payment-adapter";
@@ -26,6 +27,8 @@ async function precheckPaidCall(
   deps: TreasuryDeps,
   tool: string,
   args: Record<string, unknown>,
+  /** True when wallet_id is deferred to the paying wallet, resolved post-settle. */
+  walletFromPayer = false,
 ): Promise<{ error: { code: string; message: string } } | null> {
   if (tool === "export_statement" && !["csv", "json", "md"].includes(String(args.format))) {
     return { error: { code: "BAD_REQUEST", message: "format must be csv | json | md" } };
@@ -45,6 +48,9 @@ async function precheckPaidCall(
   }
   const walletId = args.wallet_id;
   if (typeof walletId !== "string" || walletId.length === 0) {
+    // Deferred to the paying wallet: registration always succeeds, so this
+    // cannot become a charged-but-unfulfillable call.
+    if (walletFromPayer) return null;
     return { error: { code: "BAD_REQUEST", message: "wallet_id is required" } };
   }
   const wallet = await deps.ledger.getWalletById(walletId);
@@ -52,6 +58,65 @@ async function precheckPaidCall(
     return { error: { code: "WALLET_NOT_FOUND", message: `unknown wallet_id "${walletId}"` } };
   }
   return null;
+}
+
+/**
+ * Fill in arguments a paying caller may reasonably omit, BEFORE the precheck.
+ *
+ * `wallet_id` defaults to the paying wallet: an EIP-3009 authorization is a
+ * signature by that address, so the payer has already proven control of it —
+ * the same proof `register_wallet`'s EIP-191 challenge asks for. A payer whose
+ * wallet is unknown is therefore registered here rather than rejected, so a
+ * funded caller (including the listing reviewer) gets a valid report instead of
+ * an error on a call it has already paid for.
+ *
+ * This grants no access the caller lacked: it can only ever resolve to its own
+ * address, and an explicit `wallet_id` always wins. Registration is idempotent.
+ *
+ * Cost note: each NEW payer registers a wallet, and the indexer backfills from
+ * `deps.startBlock` (INDEXER_REGISTER_LOOKBACK). That is a paid-but-cheap way
+ * to add indexing work; tune the lookback if it becomes a problem.
+ */
+function planPaidCallDefaults(
+  tool: string,
+  args: Record<string, unknown>,
+  req: Request,
+): { payerWallet: string | null } {
+  if (tool === "export_statement" && args.format === undefined) {
+    args.format = "json";
+  }
+  const walletId = args.wallet_id;
+  if (typeof walletId === "string" && walletId.length > 0) return { payerWallet: null };
+
+  const headers: Record<string, string | undefined> = {};
+  for (const [k, v] of Object.entries(req.headers)) {
+    headers[k.toLowerCase()] = Array.isArray(v) ? v[0] : v;
+  }
+  // Claimed, not yet verified — deliberately NOT acted on until payment settles.
+  return { payerWallet: readClaimedPayer(headers) };
+}
+
+/**
+ * Resolve the deferred payer wallet AFTER payment is confirmed.
+ *
+ * Registration must never happen before settlement: it is the one side effect
+ * in this path that costs real work (the indexer backfills from
+ * INDEXER_REGISTER_LOOKBACK), so doing it pre-payment would let an unpaid
+ * caller force arbitrary indexing by sending a bogus payment header.
+ *
+ * By this point the claimed payer IS the verified payer — the adapter binds
+ * `authorization.from` into the signed payload and rejects the settlement
+ * unless the facilitator recovers that same address.
+ */
+async function resolvePayerWallet(
+  deps: TreasuryDeps,
+  args: Record<string, unknown>,
+  payerWallet: string | null,
+): Promise<void> {
+  if (!payerWallet) return;
+  if (typeof args.wallet_id === "string" && args.wallet_id.length > 0) return;
+  const wallet = await deps.ledger.registerWallet(payerWallet, deps.chainId, deps.startBlock);
+  args.wallet_id = wallet.id;
 }
 
 /** Flatten express headers into the PaymentContext shape the adapter reads. */
@@ -86,6 +151,8 @@ function send402(
   const ch = challenge as Record<string, unknown> | undefined;
   const isRealX402 = ch?.x402Version === 2 && Array.isArray(ch.accepts);
   if (isRealX402) {
+    // `challenge` is created by the OKX SDK. Encode exactly that standard
+    // PaymentRequired object; internal diagnostics live outside it.
     res.header(X402_HEADERS.paymentRequired, encodePaymentRequired(ch as never));
   }
   res.status(402).json(body);
@@ -202,11 +269,15 @@ export function createApp(deps: TreasuryDeps): express.Express {
           // Free/misconfigured tools fall through to the MCP transport.
         }
 
+        // Plan omitted args (no side effects); the payer wallet is resolved
+        // only once payment is confirmed.
+        const { payerWallet } = planPaidCallDefaults(tool, args, req);
+
         // Precondition checks BEFORE any settlement — never charge for a request
         // we cannot fulfil. Covers the common charge-without-result cases (unknown
         // wallet, bad export format). Runs only for paying callers now; unpaid
         // callers already got their 402 above.
-        const precheck = await precheckPaidCall(deps, tool, args);
+        const precheck = await precheckPaidCall(deps, tool, args, payerWallet !== null);
         if (precheck) {
           res.json({ jsonrpc: "2.0", id: req.body.id, result: asContent(precheck) });
           return;
@@ -226,6 +297,10 @@ export function createApp(deps: TreasuryDeps): express.Express {
           });
           return;
         }
+        // Payment confirmed — now safe to register/resolve the payer's wallet.
+        // `args` aliases req.body.params.arguments, so the transport sees it.
+        await resolvePayerWallet(deps, args, payerWallet);
+
         // Set the standard x402 PAYMENT-RESPONSE HTTP header so an unmodified OKX
         // client can reconcile settlement via its normal path — in addition to the
         // MCP content block (below) for MCP-aware buyers. Set before the transport
@@ -301,8 +376,12 @@ export function createApp(deps: TreasuryDeps): express.Express {
 
         const args = (req.body ?? {}) as Record<string, unknown>;
 
+        // Plan omitted args (no side effects); the payer wallet is resolved
+        // only once payment is confirmed.
+        const { payerWallet } = planPaidCallDefaults(tool, args, req);
+
         // Never settle a payment for a request we cannot fulfil.
-        const precheck = await precheckPaidCall(deps, tool, args);
+        const precheck = await precheckPaidCall(deps, tool, args, payerWallet !== null);
         if (precheck) {
           res.status(errorStatus(precheck.error.code)).json(precheck);
           return;
@@ -322,6 +401,9 @@ export function createApp(deps: TreasuryDeps): express.Express {
           return;
         }
         ctx.preflightResult = payRes;
+
+        // Payment confirmed — now safe to register/resolve the payer's wallet.
+        await resolvePayerWallet(deps, args, payerWallet);
 
         const result =
           tool === "get_revenue_report"

@@ -19,10 +19,18 @@ export {
   decodePaymentPayload,
   encodePaymentResponse,
   paymentRequirements,
+  bazaarExtensions,
+  readClaimedPayer,
   caip2,
   X402_HEADERS,
 } from "./x402.js";
-export type { X402Accept, X402Challenge, BuildChallengeInput } from "./x402.js";
+export type {
+  X402Accept,
+  X402Challenge,
+  X402InputSchema,
+  ToolDescriptor,
+  BuildChallengeInput,
+} from "./x402.js";
 export {
   createOkxExactProcessor,
   SdkPaymentAdapter,
@@ -30,6 +38,7 @@ export {
 } from "./sdk.js";
 export type {
   ExactPaymentProcessor,
+  ExactResourceConfig,
   OkxCredentials,
   SdkAdapterConfig,
   SettlementStore,
@@ -44,6 +53,7 @@ import {
   type SettlementStore,
 } from "./sdk.js";
 import type { PaymentAdapter, PriceTable } from "./types.js";
+import type { ToolDescriptor } from "./x402.js";
 
 export { loadOkxCredentialsFromEnv };
 
@@ -63,6 +73,12 @@ export interface CreateAdapterOptions {
    * omitted, sdk mode falls back to in-memory only (single process).
    */
   settlementStore?: SettlementStore;
+  /**
+   * Per-tool advertised prose + argument declaration for sdk mode. Omitted =
+   * the challenge falls back to a bare "Paid MCP tool: <name>" description and
+   * declares no arguments.
+   */
+  descriptors?: Record<string, ToolDescriptor>;
 }
 
 /**
@@ -114,6 +130,7 @@ export function createPaymentAdapter(opts: CreateAdapterOptions): PaymentAdapter
       prices: opts.prices,
       processor: createOkxExactProcessor(credentials),
       settlementStore: opts.settlementStore,
+      descriptors: opts.descriptors,
     });
   }
   return new MockPaymentAdapter({ prices: opts.prices });

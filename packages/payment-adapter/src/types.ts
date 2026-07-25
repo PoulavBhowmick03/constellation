@@ -46,13 +46,25 @@ export interface RequirePaymentResult {
   receiptId?: string;
   /** Base64 x402 settlement receipt for the transport's PAYMENT-RESPONSE carrier. */
   paymentResponse?: string;
-  /** Present when status === "payment_required": why, plus how to pay. */
+  /**
+   * Internal diagnostic for a rejected/missing payment. This is deliberately
+   * separate from the wire challenge so non-standard fields never leak into
+   * PAYMENT-REQUIRED.
+   */
+  diagnostic?: string;
+  /** Present when status === "payment_required": the standard x402 challenge. */
   challenge?: {
-    reason: string;
-    /** Standard x402 PaymentRequired error field; mirrors reason. */
+    /** Mock adapters may retain a human-readable reason in their non-x402 shape. */
+    reason?: string;
+    /** Standard x402 PaymentRequired error field. */
     error?: string;
     /** Mock documentation or the real x402 accepts array. */
     accepts: string | Array<Record<string, unknown>>;
+    /**
+     * Top-level x402 extensions (e.g. the advertised `bazaar` argument schema).
+     * Carried verbatim onto the wire by the transport.
+     */
+    extensions?: Record<string, unknown>;
     /** Present for real x402 challenges so MCP buyers can detect the protocol. */
     x402Version?: 2;
     resource?: Record<string, unknown>;

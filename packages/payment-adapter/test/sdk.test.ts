@@ -1,6 +1,8 @@
 import type {
   PaymentPayload,
+  PaymentRequired,
   PaymentRequirements,
+  ResourceInfo,
   SettleResponse,
   VerifyResponse,
 } from "@okxweb3/x402-core/types";
@@ -9,6 +11,7 @@ import {
   SdkPaymentAdapter,
   TREASURY_X402,
   type ExactPaymentProcessor,
+  type ExactResourceConfig,
 } from "../src/sdk.js";
 import { buildExactChallenge } from "../src/x402.js";
 import type { PaymentContext, PriceTable } from "../src/types.js";
@@ -27,6 +30,34 @@ const prices: PriceTable = {
 
 class RecordingProcessor implements ExactPaymentProcessor {
   initialize = vi.fn(async () => undefined);
+  buildPaymentRequirements = vi.fn(
+    async (config: ExactResourceConfig): Promise<PaymentRequirements[]> => {
+      const price = config.price as { asset: string; amount: string; extra?: Record<string, unknown> };
+      return [{
+        scheme: config.scheme,
+        network: config.network,
+        asset: price.asset,
+        amount: price.amount,
+        payTo: config.payTo,
+        maxTimeoutSeconds: config.maxTimeoutSeconds ?? 300,
+        extra: price.extra ?? {},
+      }];
+    },
+  );
+  createPaymentRequiredResponse = vi.fn(
+    async (
+      requirements: PaymentRequirements[],
+      resource: ResourceInfo,
+      error?: string,
+      extensions?: Record<string, unknown>,
+    ): Promise<PaymentRequired> => ({
+      x402Version: 2,
+      error,
+      resource,
+      accepts: requirements,
+      ...(extensions ? { extensions } : {}),
+    }),
+  );
   verifyPayment = vi.fn(
     async (_payload: PaymentPayload, _requirements: PaymentRequirements): Promise<VerifyResponse> => ({
       isValid: true,
@@ -102,8 +133,12 @@ describe("SdkPaymentAdapter inbound exact flow", () => {
   it("returns a payer-detectable exact challenge when no proof is present", async () => {
     const result = await adapter.requirePayment("get_revenue_report", {});
     expect(result.status).toBe("payment_required");
+    expect(processor.initialize).toHaveBeenCalledOnce();
+    expect(processor.buildPaymentRequirements).toHaveBeenCalledOnce();
+    expect(processor.createPaymentRequiredResponse).toHaveBeenCalledOnce();
     expect(result.challenge).toMatchObject({
       x402Version: 2,
+      error: "Payment required",
       accepts: [
         {
           scheme: "exact",
@@ -111,10 +146,11 @@ describe("SdkPaymentAdapter inbound exact flow", () => {
           asset: TREASURY_X402.asset,
           payTo: TREASURY_X402.payTo,
           amount: "100000",
-          extra: { decimals: 6 },
+          extra: { name: "USD₮0", version: "1" },
         },
       ],
     });
+    expect(result.challenge).not.toHaveProperty("reason");
   });
 
   it("does not accept an arbitrary non-empty paymentProof in real mode", async () => {
@@ -178,7 +214,7 @@ describe("SdkPaymentAdapter inbound exact flow", () => {
     });
     const result = await adapter.requirePayment("get_revenue_report", header(signedPayload()));
     expect(result.status).toBe("payment_required");
-    expect(result.challenge?.reason).toMatch(/signature or nonce rejected/);
+    expect(result.diagnostic).toMatch(/signature or nonce rejected/);
     expect(processor.settlePayment).not.toHaveBeenCalled();
   });
 
@@ -303,7 +339,7 @@ describe("SdkPaymentAdapter inbound exact flow", () => {
     const revenueProof = header(signedPayload());
     const result = await adapter.requirePayment("get_expense_report", revenueProof);
     expect(result.status).toBe("payment_required");
-    expect(result.challenge?.reason).toMatch(/resource does not match/);
+    expect(result.diagnostic).toMatch(/resource does not match/);
     expect(processor.verifyPayment).not.toHaveBeenCalled();
     expect(processor.settlePayment).not.toHaveBeenCalled();
   });
@@ -313,7 +349,7 @@ describe("SdkPaymentAdapter inbound exact flow", () => {
     expect((await adapter.requirePayment("get_revenue_report", payment)).status).toBe("paid");
     const replay = await adapter.requirePayment("get_revenue_report", payment);
     expect(replay.status).toBe("payment_required");
-    expect(replay.challenge?.reason).toMatch(/nonce was already submitted/);
+    expect(replay.diagnostic).toMatch(/nonce was already submitted/);
     expect(processor.verifyPayment).toHaveBeenCalledOnce();
   });
 
@@ -322,11 +358,106 @@ describe("SdkPaymentAdapter inbound exact flow", () => {
       headers: { "payment-signature": "one", "x-payment": "two" },
     });
     expect(result.status).toBe("payment_required");
-    expect(result.challenge?.reason).toMatch(/conflicting/);
+    expect(result.diagnostic).toMatch(/conflicting/);
   });
 
   it("keeps free tools free without contacting the facilitator", async () => {
     expect((await adapter.requirePayment("get_runway", {})).status).toBe("paid");
     expect(processor.initialize).not.toHaveBeenCalled();
+  });
+});
+
+describe("challenge construction: descriptors and facilitator-outage fallback", () => {
+  const descriptors = {
+    get_revenue_report: {
+      description: "Incoming totals. wallet_id defaults to the paying wallet.",
+      input: {
+        type: "http" as const,
+        method: "POST",
+        bodyType: "json" as const,
+        body: {
+          type: "object" as const,
+          properties: { wallet_id: { type: "string" } },
+          required: [] as string[],
+        },
+      },
+    },
+  };
+
+  it("advertises the descriptor through the SDK path", async () => {
+    const processor = new RecordingProcessor();
+    const adapter = new SdkPaymentAdapter({ prices, processor, now: () => NOW_MS, descriptors });
+    const res = await adapter.requirePayment("get_revenue_report", {
+      headers: {},
+      resourceUrl: "https://example.test/services/revenue-report",
+    });
+
+    expect(res.status).toBe("payment_required");
+    const ch = res.challenge as unknown as Record<string, unknown>;
+    expect(ch.extensions).toEqual({
+      bazaar: { outputSchema: { input: descriptors.get_revenue_report.input } },
+    });
+    expect((ch.resource as { description: string }).description).toBe(
+      descriptors.get_revenue_report.description,
+    );
+    // The prose/schema must reach the SDK, not be bolted on afterwards.
+    expect(processor.createPaymentRequiredResponse).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ description: descriptors.get_revenue_report.description }),
+      "Payment required",
+      { bazaar: { outputSchema: { input: descriptors.get_revenue_report.input } } },
+    );
+  });
+
+  it("still returns a standard 402 challenge when the facilitator is unreachable", async () => {
+    // initialize() makes an authenticated getSupported() call. Without a
+    // fallback an outage turns an unpaid request into a 500 — exactly what the
+    // listing check probes for.
+    const processor = new RecordingProcessor();
+    processor.initialize = vi.fn(async () => {
+      throw new Error("facilitator unreachable");
+    });
+    const adapter = new SdkPaymentAdapter({ prices, processor, now: () => NOW_MS, descriptors });
+
+    const res = await adapter.requirePayment("get_revenue_report", {
+      headers: {},
+      resourceUrl: "https://example.test/services/revenue-report",
+    });
+
+    expect(res.status).toBe("payment_required");
+    const ch = res.challenge as unknown as Record<string, unknown>;
+    expect(ch.x402Version).toBe(2);
+    expect((ch.resource as { url: string }).url).toBe(
+      "https://example.test/services/revenue-report",
+    );
+    expect(ch.extensions).toEqual({
+      bazaar: { outputSchema: { input: descriptors.get_revenue_report.input } },
+    });
+    const accepts = ch.accepts as Array<Record<string, unknown>>;
+    expect(accepts[0]).toMatchObject({
+      scheme: "exact",
+      network: TREASURY_X402.network,
+      amount: "100000",
+      payTo: TREASURY_X402.payTo,
+    });
+    expect(processor.buildPaymentRequirements).not.toHaveBeenCalled();
+  });
+
+  it("accepts a valid payment against the fallback-built requirements", async () => {
+    // The fallback must produce requirements the settle path can still use.
+    const processor = new RecordingProcessor();
+    let failed = false;
+    processor.initialize = vi.fn(async () => {
+      if (!failed) {
+        failed = true;
+        throw new Error("facilitator unreachable");
+      }
+      return undefined;
+    });
+    const adapter = new SdkPaymentAdapter({ prices, processor, now: () => NOW_MS });
+
+    const res = await adapter.requirePayment("get_revenue_report", header(signedPayload()));
+    expect(res.status).toBe("paid");
+    expect(processor.settlePayment).toHaveBeenCalledTimes(1);
   });
 });
