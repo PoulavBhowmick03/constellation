@@ -1,6 +1,6 @@
 import type { AddressInfo } from "node:net";
 import type { Server } from "node:http";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { MOCK_PAYMENT_HEADER, MockPaymentAdapter } from "@constellation/payment-adapter";
 import { createApp } from "../src/server.js";
 import { PRICES } from "../src/prices.js";
@@ -341,6 +341,142 @@ describe("paid-call argument defaulting", () => {
       body: JSON.stringify({}),
     });
     // A PAYMENT-SIGNATURE alone is not payment in mock mode; it must 402.
+    expect(res.status).toBe(402);
+    await res.text();
+    expect(ledger.wallets.size).toBe(before);
+  });
+});
+
+// The production paid surface: precheck -> OKX middleware -> delivery.
+// A stub stands in for the SDK middleware so the mount order is testable
+// without real facilitator credentials.
+describe("SDK paid-route mount (production shape)", () => {
+  let server: Server;
+  let base: string;
+  let ledger: MemoryLedger;
+  let middlewareCalls: number;
+  let grant: boolean;
+
+  const PAYER = "0x7777777777777777777777777777777777777777";
+  const PAYER_WALLET = "w_777777777777";
+
+  function payerHeader(from = PAYER): Record<string, string> {
+    const payload = { x402Version: 2, payload: { authorization: { from, nonce: "0x01" } } };
+    return {
+      "payment-signature": Buffer.from(JSON.stringify(payload), "utf-8").toString("base64"),
+    };
+  }
+
+  beforeAll(async () => {
+    ledger = new MemoryLedger();
+    const app = createApp({
+      ledger,
+      payments: new MockPaymentAdapter({ prices: PRICES }),
+      chainId: 196,
+      startBlock: 0,
+      nonceTtlSeconds: 600,
+      // Stub SDK middleware: 402 unless `grant`, mirroring the real one which
+      // only calls next() on a confirmed settlement.
+      paidRouteMiddleware: ((_req: unknown, res: never, next: (e?: unknown) => void) => {
+        middlewareCalls += 1;
+        if (grant) {
+          (res as { header: (n: string, v: string) => unknown }).header(
+            "PAYMENT-RESPONSE",
+            "stub-receipt",
+          );
+          next();
+          return;
+        }
+        (res as unknown as { status: (c: number) => { json: (b: unknown) => void } })
+          .status(402)
+          .json({ error: { code: "PAYMENT_REQUIRED" } });
+      }) as never,
+    });
+    server = await new Promise<Server>((resolve) => {
+      const s = app.listen(0, () => resolve(s));
+    });
+    base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+  });
+
+  afterAll(() => {
+    server?.close();
+  });
+
+  beforeEach(() => {
+    middlewareCalls = 0;
+    grant = false;
+  });
+
+  it("routes an unpaid GET straight to the payment middleware", async () => {
+    // Must reach the SDK so browsers get its paywall and validators get a 402.
+    const res = await fetch(`${base}/services/revenue-report`);
+    expect(res.status).toBe(402);
+    expect(middlewareCalls).toBe(1);
+    await res.text();
+  });
+
+  it("routes an unpaid POST to the middleware without running precheck", async () => {
+    const res = await fetch(`${base}/services/revenue-report`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({}),
+    });
+    expect(res.status).toBe(402);
+    expect(middlewareCalls).toBe(1);
+    await res.text();
+  });
+
+  it("rejects a paid call with an unknown wallet BEFORE reaching payment", async () => {
+    grant = true;
+    const res = await fetch(`${base}/services/revenue-report`, {
+      method: "POST",
+      headers: { "content-type": "application/json", ...payerHeader() },
+      body: JSON.stringify({ wallet_id: "w_nope" }),
+    });
+    expect(res.status).toBe(404);
+    // The whole point of precheck-before-charge: never settle what we can't fulfil.
+    expect(middlewareCalls).toBe(0);
+    await res.text();
+  });
+
+  it("rejects a bad export format before reaching payment", async () => {
+    grant = true;
+    const res = await fetch(`${base}/services/export-statement`, {
+      method: "POST",
+      headers: { "content-type": "application/json", ...payerHeader() },
+      body: JSON.stringify({ format: "pdf" }),
+    });
+    expect(res.status).toBe(400);
+    expect(middlewareCalls).toBe(0);
+    await res.text();
+  });
+
+  it("delivers the report and registers the payer once payment is granted", async () => {
+    grant = true;
+    expect(await ledger.getWalletById(PAYER_WALLET)).toBeNull();
+
+    const res = await fetch(`${base}/services/revenue-report`, {
+      method: "POST",
+      headers: { "content-type": "application/json", ...payerHeader() },
+      body: JSON.stringify({}),
+    });
+
+    expect(res.status).toBe(200);
+    expect(middlewareCalls).toBe(1);
+    const json = (await res.json()) as { error?: unknown };
+    expect(json.error).toBeUndefined();
+    // Registration is a post-settlement side effect, so it only happens here.
+    expect((await ledger.getWalletById(PAYER_WALLET))?.address.toLowerCase()).toBe(PAYER);
+  });
+
+  it("does not register the payer when the middleware withholds access", async () => {
+    grant = false;
+    const before = ledger.wallets.size;
+    const res = await fetch(`${base}/services/expense-report`, {
+      method: "POST",
+      headers: { "content-type": "application/json", ...payerHeader("0x8888888888888888888888888888888888888888") },
+      body: JSON.stringify({}),
+    });
     expect(res.status).toBe(402);
     await res.text();
     expect(ledger.wallets.size).toBe(before);

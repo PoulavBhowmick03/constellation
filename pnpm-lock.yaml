@@ -190,6 +190,9 @@ importers:
       '@okxweb3/x402-evm':
         specifier: 0.2.1
         version: 0.2.1(typescript@5.9.3)
+      '@okxweb3/x402-express':
+        specifier: 0.1.1
+        version: 0.1.1(express@5.2.1)(typescript@5.9.3)
     devDependencies:
       '@types/node':
         specifier: ^20.11.0
@@ -724,6 +727,11 @@ packages:
 
   '@okxweb3/x402-evm@0.2.1':
     resolution: {integrity: sha512-wdkMaoQS3dy06vQQB+a6PzBoBb5nIXTZKEYLYzmq+xtRjc+F/QzQ9dBM2+FnI31TDwN/CdI1teaPWwrcy/7LxA==}
+
+  '@okxweb3/x402-express@0.1.1':
+    resolution: {integrity: sha512-7bTQoEASJyxElHxqQTtZjWg51vIw49BVxrTNhMhLGiF0Wv6Z+wbnZmonH3pkBY4wZykCmmsAGXzaKAZkvQawHA==}
+    peerDependencies:
+      express: ^4.0.0 || ^5.0.0
 
   '@pkgjs/parseargs@0.11.0':
     resolution: {integrity: sha512-+1VkjdD0QBLPodGrJUeqarH8VAIvQODIbwh9XpP5Syisf7YoQgsJKPNFoqqLQlu+VQ/tVSshMR6loPMn8U+dPg==}
@@ -3613,6 +3621,17 @@ snapshots:
       - typescript
       - utf-8-validate
 
+  '@okxweb3/x402-express@0.1.1(express@5.2.1)(typescript@5.9.3)':
+    dependencies:
+      '@okxweb3/x402-core': 0.1.0
+      express: 5.2.1
+      viem: 2.55.2(typescript@5.9.3)(zod@3.25.76)
+      zod: 3.25.76
+    transitivePeerDependencies:
+      - bufferutil
+      - typescript
+      - utf-8-validate
+
   '@pkgjs/parseargs@0.11.0':
     optional: true
 
@@ -4582,7 +4601,7 @@ snapshots:
       eslint: 8.57.1
       eslint-import-resolver-node: 0.3.10
       eslint-import-resolver-typescript: 3.10.1(eslint-plugin-import@2.32.0(eslint@8.57.1))(eslint@8.57.1)
-      eslint-plugin-import: 2.32.0(@typescript-eslint/parser@7.2.0(eslint@8.57.1)(typescript@5.9.3))(eslint-import-resolver-typescript@3.10.1(eslint-plugin-import@2.32.0(eslint@8.57.1))(eslint@8.57.1))(eslint@8.57.1)
+      eslint-plugin-import: 2.32.0(@typescript-eslint/parser@7.2.0(eslint@8.57.1)(typescript@5.9.3))(eslint-import-resolver-typescript@3.10.1)(eslint@8.57.1)
       eslint-plugin-jsx-a11y: 6.10.2(eslint@8.57.1)
       eslint-plugin-react: 7.37.5(eslint@8.57.1)
       eslint-plugin-react-hooks: 5.0.0-canary-7118f5dd7-20230705(eslint@8.57.1)
@@ -4612,7 +4631,7 @@ snapshots:
       tinyglobby: 0.2.17
       unrs-resolver: 1.12.2
     optionalDependencies:
-      eslint-plugin-import: 2.32.0(@typescript-eslint/parser@7.2.0(eslint@8.57.1)(typescript@5.9.3))(eslint-import-resolver-typescript@3.10.1(eslint-plugin-import@2.32.0(eslint@8.57.1))(eslint@8.57.1))(eslint@8.57.1)
+      eslint-plugin-import: 2.32.0(@typescript-eslint/parser@7.2.0(eslint@8.57.1)(typescript@5.9.3))(eslint-import-resolver-typescript@3.10.1)(eslint@8.57.1)
     transitivePeerDependencies:
       - supports-color
 
@@ -4627,7 +4646,7 @@ snapshots:
     transitivePeerDependencies:
       - supports-color
 
-  eslint-plugin-import@2.32.0(@typescript-eslint/parser@7.2.0(eslint@8.57.1)(typescript@5.9.3))(eslint-import-resolver-typescript@3.10.1(eslint-plugin-import@2.32.0(eslint@8.57.1))(eslint@8.57.1))(eslint@8.57.1):
+  eslint-plugin-import@2.32.0(@typescript-eslint/parser@7.2.0(eslint@8.57.1)(typescript@5.9.3))(eslint-import-resolver-typescript@3.10.1)(eslint@8.57.1):
     dependencies:
       '@rtsao/scc': 1.1.0
       array-includes: 3.1.9

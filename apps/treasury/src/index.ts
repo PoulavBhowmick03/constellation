@@ -15,7 +15,11 @@ import {
   scanAllWallets,
   updateSettlement,
 } from "@constellation/indexer";
-import { createPaymentAdapter } from "@constellation/payment-adapter";
+import {
+  createPaidRouteMiddleware,
+  createPaymentAdapter,
+  loadOkxCredentialsFromEnv,
+} from "@constellation/payment-adapter";
 import { createHandlers } from "./handlers.js";
 import { PRICES } from "./prices.js";
 import { TOOL_DESCRIPTORS } from "./descriptors.js";
@@ -81,8 +85,17 @@ function startScanLoop(): void {
   setInterval(() => void tick(), SCAN_INTERVAL_MS).unref();
 }
 
+/** Paid services exposed over plain HTTP, mirrored from the listing registration. */
+const PAID_SERVICE_ROUTES = [
+  ["revenue-report", "get_revenue_report"],
+  ["expense-report", "get_expense_report"],
+  ["export-statement", "export_statement"],
+] as const;
+
 async function main(): Promise<void> {
   const startBlock = await resolveStartBlock();
+  const paymentMode = (process.env.PAYMENT_MODE ?? "mock").toLowerCase();
+  const PUBLIC_BASE_URL = process.env.PUBLIC_BASE_URL ?? `http://localhost:${PORT}`;
   const deps = {
     ledger: {
       registerWallet,
@@ -108,6 +121,37 @@ async function main(): Promise<void> {
     chainId: XLAYER_CHAIN_ID,
     startBlock,
     nonceTtlSeconds: NONCE_TTL,
+    // OKX listing review requires the paid surface to be served by their own
+    // SDK, not an equivalent hand-rolled implementation. Only constructed in
+    // sdk mode, where real credentials exist; mock mode keeps the legacy path.
+    ...(paymentMode === "sdk"
+      ? {
+          paidRouteMiddleware: createPaidRouteMiddleware({
+            credentials: loadOkxCredentialsFromEnv(),
+            settlementStore: {
+              reserve: reserveSettlement,
+              update: updateSettlement,
+              get: getSettlement,
+            },
+            unpaidBody: (tool: string) => ({
+              error: {
+                code: "PAYMENT_REQUIRED",
+                message: `payment required for "${tool}" — replay as POST with the payment header and JSON body args`,
+              },
+            }),
+            routes: PAID_SERVICE_ROUTES.map(([slug, tool]) => ({
+              // Verb-less pattern: compiles to verb "*" in the SDK so GET, HEAD
+              // and OPTIONS probes are protected too. The listing validator
+              // probes with GET, and browsers must reach the SDK paywall.
+              pattern: `/services/${slug}`,
+              tool,
+              price: PRICES[tool]!,
+              resource: `${PUBLIC_BASE_URL}/services/${slug}`,
+              descriptor: TOOL_DESCRIPTORS[tool],
+            })),
+          }),
+        }
+      : {}),
   };
 
   createApp(deps).listen(PORT, () => {

@@ -12,6 +12,12 @@ export type {
 export { lteMoney, toBaseUnits } from "./money.js";
 export { MockPaymentAdapter, MOCK_PAYMENT_HEADER } from "./mock.js";
 export type { MockAdapterConfig } from "./mock.js";
+export { createPaidRouteMiddleware, withReceiptStore } from "./express.js";
+export type {
+  PaidRouteSpec,
+  PaidRouteMiddlewareConfig,
+  MiddlewareHandler,
+} from "./express.js";
 export {
   buildExactChallenge,
   encodePaymentRequired,

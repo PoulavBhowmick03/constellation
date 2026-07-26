@@ -1,5 +1,8 @@
 import type { GasRow, NonceCheck, TransferRow, WalletRow } from "@constellation/indexer";
-import type { PaymentAdapter } from "@constellation/payment-adapter";
+import type { MiddlewareHandler, PaymentAdapter } from "@constellation/payment-adapter";
+
+/** Express-compatible handler produced by payment-adapter's middleware factory. */
+export type PaidRouteMiddleware = MiddlewareHandler;
 
 /**
  * Everything the tool handlers need from the outside world, injectable so the
@@ -21,6 +24,15 @@ export interface Ledger {
 export interface TreasuryDeps {
   ledger: Ledger;
   payments: PaymentAdapter;
+  /**
+   * Official OKX Express payment middleware for the paid `/services/*` routes.
+   *
+   * Present in production (PAYMENT_MODE=sdk), where OKX's listing review
+   * requires the paid surface to be served by their SDK rather than an
+   * equivalent hand-rolled implementation. Absent in mock mode and in tests,
+   * which fall back to the legacy in-route payment flow.
+   */
+  paidRouteMiddleware?: PaidRouteMiddleware;
   chainId: number;
   /** Block a newly registered wallet is indexed from. */
   startBlock: number;

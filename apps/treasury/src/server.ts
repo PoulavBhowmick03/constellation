@@ -350,10 +350,99 @@ export function createApp(deps: TreasuryDeps): express.Express {
   const publicBase = (req: Request): string =>
     process.env.PUBLIC_BASE_URL ?? `https://${req.get("host") ?? "localhost"}`;
 
+  const PAID_SERVICES = [
+    ["revenue-report", "get_revenue_report"],
+    ["expense-report", "get_expense_report"],
+    ["export-statement", "export_statement"],
+  ] as const satisfies ReadonlyArray<readonly [string, string]>;
+
   const errorStatus = (code: string): number =>
     code === "WALLET_NOT_FOUND" ? 404 : code === "PAYMENT_REQUIRED" ? 402 : 400;
 
-  const paidService = (slug: string, tool: "get_revenue_report" | "get_expense_report" | "export_statement") => {
+  type PaidTool = "get_revenue_report" | "get_expense_report" | "export_statement";
+
+  const runPaidTool = async (
+    tool: PaidTool,
+    args: Record<string, unknown>,
+    ctx: PaymentContext,
+  ): Promise<unknown> =>
+    tool === "get_revenue_report"
+      ? await handlers.get_revenue_report(args as never, ctx)
+      : tool === "get_expense_report"
+        ? await handlers.get_expense_report(args as never, ctx)
+        : await handlers.export_statement(args as never, ctx);
+
+  /**
+   * Production paid surface: the official OKX Express middleware owns the
+   * 402 / verify / settle cycle (and serves the SDK paywall to browsers).
+   *
+   * Three mounted layers, in order:
+   *  1. precheck — runs ONLY for callers presenting a payment header, so an
+   *     unpaid request still reaches the middleware and gets its 402 first.
+   *     Kept out of the SDK's `onProtectedRequest` hook deliberately: that
+   *     hook's only rejection path is 403, and our contract is 400 / 404.
+   *  2. the OKX middleware.
+   *  3. delivery — reached only on a confirmed settlement, which is why the
+   *     payer's wallet is registered here rather than before payment.
+   */
+  const mountSdkPaidRoutes = (middleware: NonNullable<TreasuryDeps["paidRouteMiddleware"]>) => {
+    const paths = PAID_SERVICES.map(([slug]) => `/services/${slug}`);
+    const toolByPath = new Map<string, PaidTool>(
+      PAID_SERVICES.map(([slug, tool]) => [`/services/${slug}`, tool as PaidTool]),
+    );
+
+    app.all(paths, async (req: Request, res: Response, next: express.NextFunction) => {
+      try {
+        if (req.method !== "POST" || !hasPaymentHeader(req)) {
+          next();
+          return;
+        }
+        const tool = toolByPath.get(req.path)!;
+        const args = (req.body ?? {}) as Record<string, unknown>;
+        const { payerWallet } = planPaidCallDefaults(tool, args, req);
+        (req as unknown as { payerWallet?: string | null }).payerWallet = payerWallet;
+        const precheck = await precheckPaidCall(deps, tool, args, payerWallet !== null);
+        if (precheck) {
+          res.status(errorStatus(precheck.error.code)).json(precheck);
+          return;
+        }
+        next();
+      } catch (err) {
+        next(err);
+      }
+    });
+
+    app.use(middleware as unknown as express.RequestHandler);
+
+    app.all(paths, async (req: Request, res: Response) => {
+      const tool = toolByPath.get(req.path)!;
+      try {
+        const args = (req.body ?? {}) as Record<string, unknown>;
+        const payerWallet =
+          (req as unknown as { payerWallet?: string | null }).payerWallet ?? null;
+        await resolvePayerWallet(deps, args, payerWallet);
+
+        // Reaching here means the middleware already settled the payment. The
+        // handler's own gate must NOT run the adapter again — that would ask
+        // the facilitator to verify/settle an already-spent nonce. Hand it a
+        // satisfied preflight result instead; the middleware has already set
+        // the PAYMENT-RESPONSE header on this response.
+        const ctx: PaymentContext & { preflightResult?: unknown } = {
+          ...paymentCtx(req),
+          settlement: {},
+          preflightResult: { status: "paid", price: null },
+        };
+        res.json(await runPaidTool(tool, args, ctx));
+      } catch (err) {
+        console.error(`[treasury] service ${tool} failed:`, (err as Error).message);
+        if (!res.headersSent) {
+          res.status(500).json({ error: { code: "INTERNAL", message: "internal error" } });
+        }
+      }
+    });
+  };
+
+  const paidService = (slug: string, tool: PaidTool) => {
     app.all(`/services/${slug}`, async (req: Request, res: Response) => {
       try {
         const resourceUrl = `${publicBase(req)}/services/${slug}`;
@@ -422,9 +511,11 @@ export function createApp(deps: TreasuryDeps): express.Express {
       }
     });
   };
-  paidService("revenue-report", "get_revenue_report");
-  paidService("expense-report", "get_expense_report");
-  paidService("export-statement", "export_statement");
+  if (deps.paidRouteMiddleware) {
+    mountSdkPaidRoutes(deps.paidRouteMiddleware);
+  } else {
+    for (const [slug, tool] of PAID_SERVICES) paidService(slug, tool);
+  }
 
   // Free tools over plain HTTP (200 with the result directly, per the A2MCP
   // spec's free-endpoint shape) so the whole journey works without MCP framing.
