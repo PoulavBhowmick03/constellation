@@ -122,6 +122,14 @@ export interface SettlementRecord {
   status: "pending" | "settled" | "failed";
   transaction?: string;
   payer?: string;
+  /**
+   * The result delivered under this settlement, if one has been cached.
+   *
+   * Present so a replay returns the SAME answer it originally paid for rather
+   * than a fresh computation wearing the old receipt — and so a spent
+   * authorization cannot be replayed indefinitely for free recomputation.
+   */
+  result?: unknown;
 }
 
 export interface SettlementStore {
@@ -135,6 +143,13 @@ export interface SettlementStore {
   update(nonceKey: string, record: SettlementRecord): Promise<void>;
   /** Read the current record, if any. */
   get(nonceKey: string): Promise<SettlementRecord | null>;
+  /**
+   * Cache the delivered result under this nonce, write-once.
+   *
+   * Optional: a store without it degrades to the previous behaviour (replay
+   * recomputes), which is safe for money but not exactly-once for delivery.
+   */
+  putResult?(nonceKey: string, result: unknown): Promise<void>;
 }
 
 type ExactAuthorization = {

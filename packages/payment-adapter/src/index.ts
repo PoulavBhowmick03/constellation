@@ -17,6 +17,7 @@ export type {
   PaidRouteSpec,
   PaidRouteMiddlewareConfig,
   MiddlewareHandler,
+  X402RequestState,
 } from "./express.js";
 export {
   buildExactChallenge,

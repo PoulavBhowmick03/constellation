@@ -7,6 +7,7 @@ import {
   getLatestOkbBalance,
   getPublicClient,
   getSettlement,
+  putSettlementResult,
   getTransfers,
   getWalletById,
   issueNonce,
@@ -117,6 +118,7 @@ async function main(): Promise<void> {
         reserve: reserveSettlement,
         update: updateSettlement,
         get: getSettlement,
+        putResult: putSettlementResult,
       },
     }),
     chainId: XLAYER_CHAIN_ID,
@@ -133,6 +135,7 @@ async function main(): Promise<void> {
               reserve: reserveSettlement,
               update: updateSettlement,
               get: getSettlement,
+              putResult: putSettlementResult,
             },
             unpaidBody: (tool: string) => ({
               error: {

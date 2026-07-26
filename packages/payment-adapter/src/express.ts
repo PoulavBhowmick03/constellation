@@ -28,7 +28,31 @@ export interface ExpressLikeRequest {
   path: string;
   headers: Record<string, string | string[] | undefined>;
   body?: unknown;
+  /** Set by the middleware; read by the delivery handler. See X402RequestState. */
+  x402?: X402RequestState;
 }
+
+/**
+ * Per-request handoff from the payment middleware to the delivery handler.
+ *
+ * The middleware owns the settlement store (payment-adapter is the only package
+ * allowed to), but the handler is what produces and sends the result. This is
+ * the seam between them: the handler asks "was this already delivered?" and
+ * reports back "here is what I delivered".
+ */
+export interface X402RequestState {
+  /**
+   * The result previously delivered under this settlement. When present the
+   * handler MUST send it verbatim and do no work — that is what makes the
+   * exactly-once guarantee cover delivery and not just the charge.
+   */
+  cachedResult?: unknown;
+  /** Cache the freshly computed result under this settlement (write-once, best effort). */
+  saveResult(result: unknown): Promise<void>;
+}
+
+/** Shared no-op for requests with nothing durable to write back to. */
+const NO_SAVE: X402RequestState = { saveResult: async () => undefined };
 
 export interface ExpressLikeResponse {
   header(name: string, value: string): unknown;
@@ -167,6 +191,20 @@ export function withReceiptStore(
    * charge nothing. So the store is consulted before the middleware runs, and a
    * known-settled nonce bypasses payment processing entirely.
    */
+  /** Bind a write-once result cache for this settlement, if the store supports one. */
+  const saverFor = (nonceKey: string): X402RequestState => ({
+    saveResult: async (result: unknown) => {
+      // Best effort by design: the buyer has already been charged and served.
+      // Failing to cache costs a recomputation on replay, never a double charge,
+      // so it must not surface as an error on a successful paid call.
+      try {
+        await store.putResult?.(nonceKey, result);
+      } catch (err) {
+        console.warn("[payment-adapter] result cache write failed:", (err as Error).message);
+      }
+    },
+  });
+
   return async function paidRouteMiddleware(req, res, next) {
     const tool = toolByPath.get(req.path);
     const nonceKeyForRequest = tool ? readNonceKey(req, tool) : null;
@@ -189,6 +227,13 @@ export function withReceiptStore(
                 "utf-8",
               ).toString("base64"),
             );
+            // A settled receipt whose result never got cached (crash between
+            // settle and delivery, or a store without putResult) still has to be
+            // delivered — recompute and cache it so the NEXT replay is exact.
+            req.x402 =
+              prior.result !== undefined
+                ? { ...saverFor(nonceKey), cachedResult: prior.result }
+                : saverFor(nonceKey);
             next();
             return;
           }
@@ -210,9 +255,11 @@ export function withReceiptStore(
         return;
       }
       if (!nonceKeyForRequest) {
+        req.x402 = NO_SAVE;
         next();
         return;
       }
+      req.x402 = saverFor(nonceKeyForRequest);
       void persistReceipt(store, nonceKeyForRequest, res)
         .catch((e: unknown) =>
           console.warn("[payment-adapter] receipt persist failed:", (e as Error).message),

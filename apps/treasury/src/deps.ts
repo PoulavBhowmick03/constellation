@@ -1,5 +1,6 @@
 import type { GasRow, NonceCheck, TransferRow, WalletRow } from "@constellation/indexer";
 import type { MiddlewareHandler, PaymentAdapter } from "@constellation/payment-adapter";
+import type { RateLimiter } from "./ratelimit.js";
 
 /** Express-compatible handler produced by payment-adapter's middleware factory. */
 export type PaidRouteMiddleware = MiddlewareHandler;
@@ -37,6 +38,11 @@ export interface TreasuryDeps {
   /** Block a newly registered wallet is indexed from. */
   startBlock: number;
   nonceTtlSeconds: number;
+  /**
+   * Rate limiter for the free tools. Injectable so tests can drive an exact
+   * budget and a fake clock instead of sleeping; production builds one from env.
+   */
+  freeRateLimiter?: RateLimiter;
   /** Injectable clock for tests. */
   now?: () => Date;
 }

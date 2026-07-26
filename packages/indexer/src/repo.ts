@@ -225,6 +225,8 @@ export interface SettlementRow {
   status: "pending" | "settled" | "failed";
   transaction?: string;
   payer?: string;
+  /** The delivered result, cached so a replay returns the SAME answer. */
+  result?: unknown;
 }
 
 /**
@@ -262,9 +264,36 @@ export async function updateSettlement(nonceKey: string, row: SettlementRow): Pr
   );
 }
 
+/**
+ * Cache the delivered result under `nonceKey`, write-once.
+ *
+ * `WHERE result IS NULL` is the whole guarantee: the first delivery under a
+ * settlement is the canonical one, and nothing — a concurrent duplicate, a
+ * later replay that raced the cache, a redeploy — can rewrite it. That keeps
+ * this consistent with `updateSettlement`'s monotonic `status`: both columns
+ * only ever move from unset to set, never between two set values.
+ *
+ * Deliberately NOT folded into `updateSettlement`, whose `WHERE status <>
+ * 'settled'` guard would silently drop this write — the receipt is marked
+ * settled before the result exists.
+ */
+export async function putSettlementResult(nonceKey: string, result: unknown): Promise<void> {
+  await query(
+    `UPDATE payment_receipts
+        SET result = $2::jsonb, updated_at = now()
+      WHERE nonce_key = $1 AND result IS NULL`,
+    [nonceKey, JSON.stringify(result ?? null)],
+  );
+}
+
 export async function getSettlement(nonceKey: string): Promise<SettlementRow | null> {
-  const rows = await query<{ status: SettlementRow["status"]; transaction: string | null; payer: string | null }>(
-    `SELECT status, transaction, payer FROM payment_receipts WHERE nonce_key = $1`,
+  const rows = await query<{
+    status: SettlementRow["status"];
+    transaction: string | null;
+    payer: string | null;
+    result: unknown;
+  }>(
+    `SELECT status, transaction, payer, result FROM payment_receipts WHERE nonce_key = $1`,
     [nonceKey],
   );
   const r = rows[0];
@@ -273,5 +302,9 @@ export async function getSettlement(nonceKey: string): Promise<SettlementRow | n
     status: r.status,
     transaction: r.transaction ?? undefined,
     payer: r.payer ?? undefined,
+    // SQL NULL and a cached JSON `null` are indistinguishable after the driver
+    // maps both to null, so treat only a non-null value as a cache hit. A tool
+    // never returns bare null, so nothing real is lost.
+    ...(r.result !== null && r.result !== undefined ? { result: r.result } : {}),
   };
 }

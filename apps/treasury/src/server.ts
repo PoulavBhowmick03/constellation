@@ -2,7 +2,7 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import express, { type Request, type Response } from "express";
 import { z } from "zod";
-import type { PaymentContext } from "@constellation/payment-adapter";
+import type { PaymentContext, X402RequestState } from "@constellation/payment-adapter";
 import {
   encodePaymentRequired,
   readClaimedPayer,
@@ -12,6 +12,7 @@ import {
 import type { TreasuryHandlers } from "./handlers.js";
 import { createHandlers } from "./handlers.js";
 import type { TreasuryDeps } from "./deps.js";
+import { clientKey, createRateLimiter } from "./ratelimit.js";
 
 const periodShape = z
   .object({ from: z.string().optional(), to: z.string().optional() })
@@ -196,8 +197,27 @@ async function paidContent(
  * call sees the payment headers of ITS request — sessions must not share
  * payment proof.
  */
-function buildServer(handlers: TreasuryHandlers, ctx: PaymentContext): McpServer {
+function buildServer(
+  handlers: TreasuryHandlers,
+  ctx: PaymentContext,
+  /**
+   * Consume one unit of this caller's free-tool budget. Returns the retry delay
+   * in seconds when the caller is over its limit, or null to proceed. Applied to
+   * the free tools ONLY — the paid ones are throttled by their own price, and
+   * refusing a call someone has already paid for would be indefensible.
+   */
+  takeFreeBudget: () => number | null = () => null,
+): McpServer {
   const server = new McpServer({ name: "treasury-copilot", version: "0.1.0" });
+
+  /** Shared shape so an MCP caller sees the same error as the HTTP surface. */
+  const rateLimited = (retry: number) =>
+    asContent({
+      error: {
+        code: "RATE_LIMITED",
+        message: `too many free-tool requests — retry in ${retry}s. Paid tools are not rate limited.`,
+      },
+    });
 
   server.tool(
     "register_wallet",
@@ -207,14 +227,22 @@ function buildServer(handlers: TreasuryHandlers, ctx: PaymentContext): McpServer
       nonce: z.string().optional(),
       signature: z.string().optional(),
     },
-    async (args) => asContent(await handlers.register_wallet(args)),
+    async (args) => {
+      const retry = takeFreeBudget();
+      if (retry !== null) return rateLimited(retry);
+      return asContent(await handlers.register_wallet(args));
+    },
   );
 
   server.tool(
     "get_runway",
     "OKB balance, average daily gas over 7d, and estimated runway in days for a registered wallet. Free.",
     { wallet_id: z.string() },
-    async (args) => asContent(await handlers.get_runway(args)),
+    async (args) => {
+      const retry = takeFreeBudget();
+      if (retry !== null) return rateLimited(retry);
+      return asContent(await handlers.get_runway(args));
+    },
   );
 
   server.tool(
@@ -344,7 +372,10 @@ export function createApp(deps: TreasuryDeps): express.Express {
       next(err);
     }
   }, async (req: Request, res: Response) => {
-    const server = buildServer(handlers, paymentCtx(req));
+    const server = buildServer(handlers, paymentCtx(req), () => {
+      const key = clientKey(req);
+      return limiter.take(key) ? null : Math.max(1, limiter.retryAfter(key));
+    });
     const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined });
     res.on("close", () => {
       void transport.close();
@@ -374,6 +405,39 @@ export function createApp(deps: TreasuryDeps): express.Express {
   // The /mcp surface stays canonical for MCP-native agents.
   const publicBase = (req: Request): string =>
     process.env.PUBLIC_BASE_URL ?? `https://${req.get("host") ?? "localhost"}`;
+
+  /**
+   * Rate limit for the free tools only.
+   *
+   * Sized for agent traffic, not human clicking: a burst of 30 then 1/s
+   * sustained is far above any legitimate caller's registration or runway-check
+   * rate, and far below what it takes to keep the indexer saturated. The paid
+   * routes are intentionally NOT limited — settlement already costs the caller
+   * money, and a 429 on a call someone paid for would be the worst possible
+   * failure mode.
+   */
+  const limiter =
+    deps.freeRateLimiter ??
+    createRateLimiter({
+      capacity: Number(process.env.FREE_RATE_BURST ?? 30),
+      refillPerSecond: Number(process.env.FREE_RATE_PER_SECOND ?? 1),
+    });
+
+  const freeLimit = (req: Request, res: Response, next: express.NextFunction): void => {
+    const key = clientKey(req);
+    if (limiter.take(key)) {
+      next();
+      return;
+    }
+    const retry = limiter.retryAfter(key);
+    res.setHeader("Retry-After", String(Math.max(1, retry)));
+    res.status(429).json({
+      error: {
+        code: "RATE_LIMITED",
+        message: `too many free-tool requests — retry in ${Math.max(1, retry)}s. Paid tools are not rate limited.`,
+      },
+    });
+  };
 
   const PAID_SERVICES = [
     ["revenue-report", "get_revenue_report"],
@@ -448,7 +512,19 @@ export function createApp(deps: TreasuryDeps): express.Express {
 
     app.all(paths, async (req: Request, res: Response) => {
       const tool = toolByPath.get(req.path)!;
+      const x402 = (req as unknown as { x402?: X402RequestState }).x402;
       try {
+        // Exactly-once DELIVERY. A replayed authorization already bought a
+        // specific answer; returning a freshly computed one would mean the same
+        // receipt vouches for two different results — and for a balance- and
+        // time-sensitive tool like spend_preflight those can genuinely disagree.
+        // Serving from cache also stops a spent nonce being replayed forever for
+        // free indexer work.
+        if (x402?.cachedResult !== undefined) {
+          res.json(x402.cachedResult);
+          return;
+        }
+
         const args = (req.body ?? {}) as Record<string, unknown>;
         const payerWallet =
           (req as unknown as { payerWallet?: string | null }).payerWallet ?? null;
@@ -464,7 +540,11 @@ export function createApp(deps: TreasuryDeps): express.Express {
           settlement: {},
           preflightResult: { status: "paid", price: null },
         };
-        res.json(await runPaidTool(tool, args, ctx));
+        const result = await runPaidTool(tool, args, ctx);
+        res.json(result);
+        // Cached AFTER the response is handed to the client: the buyer paid for
+        // delivery, and a slow or failing cache write must not delay or fail it.
+        await x402?.saveResult(result);
       } catch (err) {
         console.error(`[treasury] service ${tool} failed:`, (err as Error).message);
         if (!res.headersSent) {
@@ -546,7 +626,7 @@ export function createApp(deps: TreasuryDeps): express.Express {
 
   // Free tools over plain HTTP (200 with the result directly, per the A2MCP
   // spec's free-endpoint shape) so the whole journey works without MCP framing.
-  app.post("/services/register-wallet", async (req: Request, res: Response) => {
+  app.post("/services/register-wallet", freeLimit, async (req: Request, res: Response) => {
     try {
       res.json(await handlers.register_wallet((req.body ?? {}) as never));
     } catch (err) {
@@ -554,7 +634,7 @@ export function createApp(deps: TreasuryDeps): express.Express {
       if (!res.headersSent) res.status(500).json({ error: { code: "INTERNAL", message: "internal error" } });
     }
   });
-  app.post("/services/runway", async (req: Request, res: Response) => {
+  app.post("/services/runway", freeLimit, async (req: Request, res: Response) => {
     try {
       const result = await handlers.get_runway((req.body ?? {}) as never);
       const code = (result as { error?: { code?: string } }).error?.code;

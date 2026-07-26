@@ -1,0 +1,14 @@
+-- Cache the delivered result alongside its settlement receipt.
+--
+-- Without this, a replayed nonce short-circuits the CHARGE but still re-runs the
+-- tool, so the buyer gets a freshly computed answer stapled to the original
+-- receipt. Two problems that fixes:
+--   1. Exactly-once was only true of the money, not of the delivery. A
+--      time-sensitive tool (spend_preflight) could return a DIFFERENT decision
+--      against the same receipt as the ledger moved underneath it.
+--   2. A payer could replay a spent authorization indefinitely and get unbounded
+--      indexer work for free.
+--
+-- Written once and never updated: the first delivery under a nonce is THE
+-- result for that nonce. See putSettlementResult's `WHERE result IS NULL` guard.
+ALTER TABLE payment_receipts ADD COLUMN IF NOT EXISTS result JSONB;

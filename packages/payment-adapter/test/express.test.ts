@@ -16,6 +16,11 @@ class MemoryStore implements SettlementStore {
     this.records.set(k, r);
   });
   get = vi.fn(async (k: string) => this.records.get(k) ?? null);
+  /** Write-once, mirroring the SQL `WHERE result IS NULL` guard. */
+  putResult = vi.fn(async (k: string, result: unknown) => {
+    const row = this.records.get(k);
+    if (row && row.result === undefined) this.records.set(k, { ...row, result });
+  });
 }
 
 function paymentHeader(from = PAYER, nonce = NONCE): string {
@@ -205,5 +210,117 @@ describe("withReceiptStore — exactly-once charging", () => {
 
     expect(next).toHaveBeenCalledWith(boom);
     expect(store.update).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * Exactly-once DELIVERY.
+ *
+ * The charge was already exactly-once; the delivered RESULT was not. A replay
+ * re-ran the tool, so the same receipt could vouch for two different answers
+ * (spend_preflight is balance- and time-sensitive), and a spent authorization
+ * bought unbounded recomputation. These tests pin the cache that closes both.
+ */
+describe("withReceiptStore — exactly-once delivery", () => {
+  let store: MemoryStore;
+  const RESULT = { revenue: { amount: "1230000", token: "USDT" }, ranked: ["0xc"] };
+
+  beforeEach(() => {
+    store = new MemoryStore();
+  });
+
+  it("hands the handler a saver on a first paid call, and no cached result", async () => {
+    const mw = withReceiptStore(grantingInner(), store, toolByPath);
+    const req = makeReq();
+    const next = vi.fn();
+
+    await mw(req, makeRes(), next);
+    await vi.waitFor(() => expect(next).toHaveBeenCalled());
+
+    expect(req.x402?.cachedResult).toBeUndefined();
+    await req.x402!.saveResult(RESULT);
+    expect(store.records.get(KEY)?.result).toEqual(RESULT);
+  });
+
+  it("returns the ORIGINAL result on replay, not a recomputation", async () => {
+    store.records.set(KEY, { status: "settled", transaction: TX, payer: PAYER, result: RESULT });
+    const inner = grantingInner();
+    const mw = withReceiptStore(inner, store, toolByPath);
+    const req = makeReq();
+    const next = vi.fn();
+
+    await mw(req, makeRes(), next);
+
+    expect(inner).not.toHaveBeenCalled();
+    expect(req.x402?.cachedResult).toEqual(RESULT);
+  });
+
+  it("never rewrites a cached result, so the first delivery is canonical", async () => {
+    store.records.set(KEY, { status: "settled", transaction: TX, payer: PAYER, result: RESULT });
+    const mw = withReceiptStore(grantingInner(), store, toolByPath);
+    const req = makeReq();
+
+    await mw(req, makeRes(), vi.fn());
+    await req.x402!.saveResult({ revenue: { amount: "9999999", token: "USDT" } });
+
+    expect(store.records.get(KEY)?.result).toEqual(RESULT);
+  });
+
+  it("recomputes when a settled receipt has no cached result, then caches it", async () => {
+    // Crash between settle and delivery, or an upgrade from a pre-cache receipt:
+    // the buyer already paid, so we must still deliver — and cache it this time.
+    store.records.set(KEY, { status: "settled", transaction: TX, payer: PAYER });
+    const mw = withReceiptStore(grantingInner(), store, toolByPath);
+    const req = makeReq();
+    const next = vi.fn();
+
+    await mw(req, makeRes(), next);
+
+    expect(next).toHaveBeenCalledOnce();
+    expect(req.x402?.cachedResult).toBeUndefined();
+    await req.x402!.saveResult(RESULT);
+    expect(store.records.get(KEY)?.result).toEqual(RESULT);
+  });
+
+  it("delivers normally when the cache write fails", async () => {
+    store.putResult.mockRejectedValueOnce(new Error("db down"));
+    const mw = withReceiptStore(grantingInner(), store, toolByPath);
+    const req = makeReq();
+    const next = vi.fn();
+
+    await mw(req, makeRes(), next);
+    await vi.waitFor(() => expect(next).toHaveBeenCalled());
+
+    // The buyer is already charged and served: a cache miss costs a future
+    // recomputation, never an error on this call.
+    await expect(req.x402!.saveResult(RESULT)).resolves.toBeUndefined();
+  });
+
+  it("degrades safely against a store with no putResult", async () => {
+    const legacy: SettlementStore = { reserve: store.reserve, update: store.update, get: store.get };
+    const mw = withReceiptStore(grantingInner(), legacy, toolByPath);
+    const req = makeReq();
+    const next = vi.fn();
+
+    await mw(req, makeRes(), next);
+    await vi.waitFor(() => expect(next).toHaveBeenCalled());
+
+    await expect(req.x402!.saveResult(RESULT)).resolves.toBeUndefined();
+  });
+
+  it("does not leak a cached result across tools", async () => {
+    store.records.set(KEY, { status: "settled", transaction: TX, payer: PAYER, result: RESULT });
+    const mw = withReceiptStore(
+      grantingInner(),
+      store,
+      new Map([["/services/expense-report", "get_expense_report"]]),
+    );
+    const req = makeReq({ path: "/services/expense-report" });
+    const next = vi.fn();
+
+    await mw(req, makeRes(), next);
+    await vi.waitFor(() => expect(next).toHaveBeenCalled());
+
+    expect(req.x402?.cachedResult).toBeUndefined();
   });
 });

@@ -31,6 +31,7 @@ export {
   reserveSettlement,
   updateSettlement,
   getSettlement,
+  putSettlementResult,
   type WalletRow,
   type NonceCheck,
   type SettlementRow,
