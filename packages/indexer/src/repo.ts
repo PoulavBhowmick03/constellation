@@ -265,23 +265,33 @@ export async function updateSettlement(nonceKey: string, row: SettlementRow): Pr
 }
 
 /**
- * Cache the delivered result under `nonceKey`, write-once.
+ * Cache the delivered result under `nonceKey`, write-once — an UPSERT because
+ * this can arrive BEFORE the settlement row exists.
  *
- * `WHERE result IS NULL` is the whole guarantee: the first delivery under a
- * settlement is the canonical one, and nothing — a concurrent duplicate, a
- * later replay that raced the cache, a redeploy — can rewrite it. That keeps
- * this consistent with `updateSettlement`'s monotonic `status`: both columns
- * only ever move from unset to set, never between two set values.
+ * The receipt (`status`/`transaction`/`payer`, via `updateSettlement`) and the
+ * result (this function) are now written from two independent, unordered
+ * paths: `onAfterSettle` persists the receipt from the SDK's own settlement
+ * event, while the result is cached by the request handler right after it
+ * delivers the response. Which one runs first is a real race, observed live —
+ * `next()` fires once payment is VERIFIED, not once settlement is confirmed,
+ * so delivery can finish before `onAfterSettle` ever runs.
  *
- * Deliberately NOT folded into `updateSettlement`, whose `WHERE status <>
- * 'settled'` guard would silently drop this write — the receipt is marked
- * settled before the result exists.
+ * If no row exists yet, this creates one as `pending` (not yet a replay
+ * target — see the `status = 'settled'` guard in the replay short-circuit)
+ * carrying just the result. `updateSettlement`'s own UPSERT then merges the
+ * receipt into that same row when it arrives, without touching `result` (it
+ * isn't in that query's SET list), preserving whichever order things land in.
+ *
+ * `WHERE result IS NULL` remains the write-once guarantee in both directions:
+ * the first delivery under a settlement is canonical, full stop.
  */
 export async function putSettlementResult(nonceKey: string, result: unknown): Promise<void> {
   await query(
-    `UPDATE payment_receipts
-        SET result = $2::jsonb, updated_at = now()
-      WHERE nonce_key = $1 AND result IS NULL`,
+    `INSERT INTO payment_receipts (nonce_key, status, result)
+     VALUES ($1, 'pending', $2::jsonb)
+     ON CONFLICT (nonce_key)
+     DO UPDATE SET result = EXCLUDED.result, updated_at = now()
+     WHERE payment_receipts.result IS NULL`,
     [nonceKey, JSON.stringify(result ?? null)],
   );
 }

@@ -38,9 +38,14 @@ class MemoryStore implements SettlementStore {
     this.records.set(k, { ...prior, ...r });
   });
   get = vi.fn(async (k: string) => this.records.get(k) ?? null);
+  /** Mirrors the real UPSERT: creates a `pending` row if the receipt hasn't landed yet. */
   putResult = vi.fn(async (k: string, result: unknown) => {
     const row = this.records.get(k);
-    if (row && row.result === undefined) this.records.set(k, { ...row, result });
+    if (!row) {
+      this.records.set(k, { status: "pending", result });
+      return;
+    }
+    if (row.result === undefined) this.records.set(k, { ...row, result });
   });
 }
 
@@ -141,8 +146,14 @@ describe("createPaidRouteMiddleware — receipt persisted from a real (delayed) 
         ],
       }) as unknown as express.RequestHandler,
     );
-    app.all(PATH, (_req, res) => {
-      res.json({ decision: "allow", computed: true });
+    app.all(PATH, async (req, res) => {
+      const result = { decision: "allow", computed: true };
+      res.json(result);
+      // Mirrors apps/treasury/src/server.ts's delivery handler: cache the
+      // result AFTER responding, via the state withReceiptStore attached.
+      await (req as unknown as { x402?: { saveResult(r: unknown): Promise<void> } }).x402?.saveResult(
+        result,
+      );
     });
     const s = await new Promise<Server>((resolve) => {
       const srv = app.listen(0, () => resolve(srv));
@@ -172,6 +183,50 @@ describe("createPaidRouteMiddleware — receipt persisted from a real (delayed) 
     // `createPaidRouteMiddleware`'s hook) — assert it lands, not exactly when.
     await vi.waitFor(() => expect(store.records.get(key)?.status).toBe("settled"), { timeout: 2000 });
     expect(store.records.get(key)).toMatchObject({ status: "settled", transaction: TX, payer: PAYER });
+  });
+
+  it("merges the result and the receipt correctly regardless of which lands first", async () => {
+    // A second real bug found live: putResult was UPDATE-only, so a
+    // result-cache write that landed before onAfterSettle had created the row
+    // matched nothing and silently no-opped — the receipt landed, but the
+    // cached result never did. Which side actually lands first is a genuine
+    // race (not deterministic even with a settle delay), so this asserts the
+    // invariant that has to hold either way: both end up on the SAME row.
+    const store = new MemoryStore();
+    const base = await serve(store, 150);
+
+    const res = await fetch(`${base}${PATH}`, {
+      method: "POST",
+      headers: { "content-type": "application/json", "payment-signature": paymentHeader() },
+      body: JSON.stringify({ amount: "50000" }),
+    });
+    expect(res.status).toBe(200);
+
+    await vi.waitFor(() => expect(store.records.get(key)?.status).toBe("settled"), { timeout: 2000 });
+    expect(store.records.size).toBe(1); // one row, not two independent writes
+    expect(store.records.get(key)).toMatchObject({
+      status: "settled",
+      transaction: TX,
+      payer: PAYER,
+      result: { decision: "allow", computed: true },
+    });
+  });
+
+  it("creates the row from the result write when it genuinely arrives first", async () => {
+    // Directly exercises putResult's create-if-absent path against an empty
+    // store, independent of the real middleware's timing.
+    const store = new MemoryStore();
+    await store.putResult(key, { decision: "allow", computed: true });
+
+    expect(store.records.get(key)).toEqual({ status: "pending", result: { decision: "allow", computed: true } });
+
+    await store.update(key, { status: "settled", transaction: TX, payer: PAYER });
+    expect(store.records.get(key)).toEqual({
+      status: "settled",
+      transaction: TX,
+      payer: PAYER,
+      result: { decision: "allow", computed: true },
+    });
   });
 
   it("makes a subsequent replay short-circuit once the late receipt has landed", async () => {

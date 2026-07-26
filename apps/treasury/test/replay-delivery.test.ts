@@ -52,8 +52,13 @@ class MemoryStore implements SettlementStore {
     return this.records.get(k) ?? null;
   }
   async putResult(k: string, result: unknown) {
+    // Mirrors the real UPSERT: creates a `pending` row if the receipt hasn't landed yet.
     const row = this.records.get(k);
-    if (row && row.result === undefined) this.records.set(k, { ...row, result });
+    if (!row) {
+      this.records.set(k, { status: "pending", result });
+      return;
+    }
+    if (row.result === undefined) this.records.set(k, { ...row, result });
   }
 }
 

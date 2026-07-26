@@ -146,6 +146,12 @@ export interface SettlementStore {
   /**
    * Cache the delivered result under this nonce, write-once.
    *
+   * MUST be safe to call before `reserve`/`update` for this nonce have ever
+   * run — implementations should create the record if absent (e.g. an
+   * upsert), not assume it exists. The receipt and the result are written
+   * from independent, unordered paths in practice, so either can arrive
+   * first.
+   *
    * Optional: a store without it degrades to the previous behaviour (replay
    * recomputes), which is safe for money but not exactly-once for delivery.
    */
