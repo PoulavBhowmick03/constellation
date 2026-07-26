@@ -8,4 +8,7 @@ export const PRICES: PriceTable = {
   get_revenue_report: { token: "USDT", amount: "100000", decimals: 6 }, // 0.10
   get_expense_report: { token: "USDT", amount: "100000", decimals: 6 }, // 0.10
   export_statement: { token: "USDT", amount: "200000", decimals: 6 }, // 0.20
+  // Priced below the report tier on purpose: an agent is meant to call this
+  // before every spend, so it must be cheap enough not to distort the decision.
+  spend_preflight: { token: "USDT", amount: "50000", decimals: 6 }, // 0.05
 };

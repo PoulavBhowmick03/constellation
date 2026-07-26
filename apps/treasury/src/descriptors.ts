@@ -78,4 +78,34 @@ export const TOOL_DESCRIPTORS: Record<string, ToolDescriptor> = {
       },
     },
   },
+  spend_preflight: {
+    description:
+      "Advisory spend check: projects balance and burn-rate runway past a proposed spend and evaluates it against optional policy caps. " +
+      "Read-only — it moves nothing and authorises nothing; a deny is a recommendation. " +
+      "POST a JSON body with amount in base units; wallet_id defaults to the paying wallet. " +
+      'Example: {"amount":"250000","policy":{"max_pct_balance":20}}',
+    input: {
+      type: "http",
+      method: "POST",
+      bodyType: "json",
+      body: {
+        type: "object",
+        properties: {
+          wallet_id: walletIdProp,
+          amount: {
+            type: "string",
+            description: "Proposed spend in base units, e.g. 250000 for 0.25 USDT",
+          },
+          token: { type: "string", description: "Token symbol; defaults to USDT" },
+          counterparty: { type: "string", description: "Optional recipient address" },
+          policy: {
+            type: "object",
+            description:
+              'Optional caps: {"max_pct_balance":20,"min_runway_days_after":30,"max_single_spend":"1000000"}',
+          },
+        },
+        required: ["amount"],
+      },
+    },
+  },
 };

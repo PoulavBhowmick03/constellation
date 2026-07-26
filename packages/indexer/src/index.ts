@@ -3,6 +3,7 @@ export {
   computeRevenueReport,
   computeExpenseReport,
   computeRunway,
+  computeSpendPreflight,
   exportStatement,
   type Statement,
   type StatementFormat,

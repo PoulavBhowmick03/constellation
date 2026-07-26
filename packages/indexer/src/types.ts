@@ -79,3 +79,45 @@ export interface RunwayReport {
 }
 
 export const OKB: { token: "OKB"; decimals: 18 } = { token: "OKB", decimals: 18 };
+
+// ---- Spend preflight -------------------------------------------------------
+
+/**
+ * Caps an agent applies to a single spend. All optional: an omitted cap is not
+ * enforced. Percentages are 0-100.
+ */
+export interface SpendPolicy {
+  /** Deny if the spend exceeds this share of the current token balance. */
+  max_pct_balance?: number;
+  /** Deny if projected runway after the spend falls below this many days. */
+  min_runway_days_after?: number;
+  /** Deny if the spend exceeds this absolute amount, in base units. */
+  max_single_spend?: string;
+}
+
+export interface PolicyBreach {
+  code: string;
+  detail: string;
+}
+
+export interface SpendPreflight {
+  decision: "allow" | "warn" | "deny";
+  amount: Money;
+  balance_before: Money;
+  balance_after: Money;
+  /** Share of the current balance this spend consumes, 0-100. Null if balance is 0. */
+  pct_of_balance: number | null;
+  /** Mean daily outflow over the trailing 7 days, in base units. */
+  avg_daily_outflow_7d: Money;
+  runway_days_before: number | null;
+  runway_after_days: number | null;
+  /**
+   * Share of remaining runway this spend consumes, 0-100. Under a constant
+   * burn-rate model this equals `pct_of_balance`; both are reported because a
+   * caller reasoning about time wants the runway framing.
+   */
+  pct_of_runway: number | null;
+  breaches: PolicyBreach[];
+  reasons: string[];
+  as_of: string;
+}

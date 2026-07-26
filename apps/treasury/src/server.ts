@@ -33,6 +33,12 @@ async function precheckPaidCall(
   if (tool === "export_statement" && !["csv", "json", "md"].includes(String(args.format))) {
     return { error: { code: "BAD_REQUEST", message: "format must be csv | json | md" } };
   }
+  // Validate the spend amount BEFORE charging — a malformed amount must not settle.
+  if (tool === "spend_preflight" && !/^\d+$/.test(String(args.amount ?? ""))) {
+    return {
+      error: { code: "BAD_REQUEST", message: "amount must be an unsigned base-unit integer string" },
+    };
+  }
   // Validate the period BEFORE charging — a malformed from/to must not settle.
   const period = args.period;
   if (period !== undefined && period !== null) {
@@ -236,6 +242,25 @@ function buildServer(handlers: TreasuryHandlers, ctx: PaymentContext): McpServer
     async (args) => paidContent(ctx, (c) => handlers.export_statement(args, c)),
   );
 
+  server.tool(
+    "spend_preflight",
+    "Advisory check before an agent spends: projects balance and burn-rate runway past the spend and evaluates it against optional policy caps. Read-only — moves nothing, authorises nothing. Paid: 0.05 USDT.",
+    {
+      wallet_id: z.string(),
+      amount: z.string(),
+      token: z.string().optional(),
+      counterparty: z.string().optional(),
+      policy: z
+        .object({
+          max_pct_balance: z.number().optional(),
+          min_runway_days_after: z.number().optional(),
+          max_single_spend: z.string().optional(),
+        })
+        .optional(),
+    },
+    async (args) => paidContent(ctx, (c) => handlers.spend_preflight(args, c)),
+  );
+
   return server;
 }
 
@@ -244,7 +269,7 @@ export function createApp(deps: TreasuryDeps): express.Express {
   const app = express();
   app.use(express.json());
 
-  const PAID_TOOLS = ["get_revenue_report", "get_expense_report", "export_statement"];
+  const PAID_TOOLS = ["get_revenue_report", "get_expense_report", "export_statement", "spend_preflight"];
 
   app.post("/mcp", async (req: Request, res: Response, next: express.NextFunction) => {
     try {
@@ -354,12 +379,17 @@ export function createApp(deps: TreasuryDeps): express.Express {
     ["revenue-report", "get_revenue_report"],
     ["expense-report", "get_expense_report"],
     ["export-statement", "export_statement"],
+    ["spend-preflight", "spend_preflight"],
   ] as const satisfies ReadonlyArray<readonly [string, string]>;
 
   const errorStatus = (code: string): number =>
     code === "WALLET_NOT_FOUND" ? 404 : code === "PAYMENT_REQUIRED" ? 402 : 400;
 
-  type PaidTool = "get_revenue_report" | "get_expense_report" | "export_statement";
+  type PaidTool =
+    | "get_revenue_report"
+    | "get_expense_report"
+    | "export_statement"
+    | "spend_preflight";
 
   const runPaidTool = async (
     tool: PaidTool,
@@ -370,7 +400,9 @@ export function createApp(deps: TreasuryDeps): express.Express {
       ? await handlers.get_revenue_report(args as never, ctx)
       : tool === "get_expense_report"
         ? await handlers.get_expense_report(args as never, ctx)
-        : await handlers.export_statement(args as never, ctx);
+        : tool === "spend_preflight"
+          ? await handlers.spend_preflight(args as never, ctx)
+          : await handlers.export_statement(args as never, ctx);
 
   /**
    * Production paid surface: the official OKX Express middleware owns the
@@ -494,12 +526,7 @@ export function createApp(deps: TreasuryDeps): express.Express {
         // Payment confirmed — now safe to register/resolve the payer's wallet.
         await resolvePayerWallet(deps, args, payerWallet);
 
-        const result =
-          tool === "get_revenue_report"
-            ? await handlers.get_revenue_report(args as never, ctx)
-            : tool === "get_expense_report"
-              ? await handlers.get_expense_report(args as never, ctx)
-              : await handlers.export_statement(args as never, ctx);
+        const result = await runPaidTool(tool, args, ctx);
 
         if (payRes.paymentResponse) {
           res.header(X402_HEADERS.paymentResponse, payRes.paymentResponse);
@@ -560,6 +587,7 @@ export function createApp(deps: TreasuryDeps): express.Express {
         "/services/revenue-report",
         "/services/expense-report",
         "/services/export-statement",
+        "/services/spend-preflight",
       ],
     });
   });

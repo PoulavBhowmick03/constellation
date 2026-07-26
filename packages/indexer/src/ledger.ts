@@ -11,6 +11,9 @@ import {
   type Period,
   type RevenueReport,
   type RunwayReport,
+  type SpendPolicy,
+  type SpendPreflight,
+  type PolicyBreach,
   type TransferRow,
 } from "./types.js";
 import { expenseInsights, revenueInsights, runwayInsights } from "./insights.js";
@@ -251,4 +254,134 @@ export function exportStatement(
     );
   }
   return { format, content: lines.join("\n"), row_count: rows.length };
+}
+
+// ---- Spend preflight -------------------------------------------------------
+
+/** Percentage of `part` in `whole`, to 2dp. Null when `whole` is not positive. */
+function pctOf(part: bigint, whole: bigint): number | null {
+  if (whole <= 0n) return null;
+  // Scale before dividing so integer division does not floor away precision.
+  return Number((part * 10_000n) / whole) / 100;
+}
+
+/** Days of runway at a given daily burn. Null when there is no measurable burn. */
+function runwayDays(balance: bigint, perDay: bigint): number | null {
+  if (perDay <= 0n) return null;
+  if (balance <= 0n) return 0;
+  return Math.round(Number((balance * 1000n) / perDay) / 100) / 10;
+}
+
+/**
+ * Advisory answer to "can this wallet afford this spend, and should it?".
+ *
+ * Read-only and non-custodial: it moves nothing and authorises nothing, it only
+ * reports. `deny` is a recommendation the caller is free to ignore.
+ *
+ * Runway here is BURN-RATE runway in the token being spent — balance divided by
+ * mean daily outflow — NOT the gas runway `computeRunway` reports. Spending a
+ * stablecoin does not change how long OKB lasts, so reusing gas runway here
+ * would answer a different question than the caller asked.
+ */
+export function computeSpendPreflight(
+  transfers: TransferRow[],
+  input: { amount: string; token?: string; counterparty?: string; policy?: SpendPolicy },
+  asOf: Date = new Date(),
+): SpendPreflight {
+  const token = input.token ?? "USDT";
+  const rows = transfers.filter((t) => t.token === token);
+  const decimals = rows[0]?.decimals ?? 6;
+
+  let balance = 0n;
+  for (const r of rows) balance += r.direction === "in" ? BigInt(r.amount) : -BigInt(r.amount);
+
+  const windowStart = asOf.getTime() - 7 * MS_PER_DAY;
+  let outflow7d = 0n;
+  for (const r of rows) {
+    if (r.direction !== "out") continue;
+    const t = Date.parse(r.blockTime);
+    if (t >= windowStart && t <= asOf.getTime()) outflow7d += BigInt(r.amount);
+  }
+  const avgDailyOutflow = outflow7d / 7n;
+
+  const amount = BigInt(input.amount);
+  const balanceAfter = balance - amount;
+  const before = runwayDays(balance, avgDailyOutflow);
+  const after = runwayDays(balanceAfter, avgDailyOutflow);
+  const pctBalance = pctOf(amount, balance);
+
+  const breaches: PolicyBreach[] = [];
+  const reasons: string[] = [];
+  const policy = input.policy ?? {};
+
+  if (amount <= 0n) {
+    breaches.push({ code: "INVALID_AMOUNT", detail: "spend amount must be positive" });
+  }
+  if (balanceAfter < 0n) {
+    breaches.push({
+      code: "INSUFFICIENT_BALANCE",
+      detail: `spend of ${input.amount} exceeds the ${token} balance of ${balance.toString()}`,
+    });
+  }
+  if (policy.max_single_spend !== undefined && amount > BigInt(policy.max_single_spend)) {
+    breaches.push({
+      code: "MAX_SINGLE_SPEND",
+      detail: `spend exceeds the per-transaction cap of ${policy.max_single_spend}`,
+    });
+  }
+  if (policy.max_pct_balance !== undefined && pctBalance !== null && pctBalance > policy.max_pct_balance) {
+    breaches.push({
+      code: "MAX_PCT_BALANCE",
+      detail: `spend is ${pctBalance}% of balance, over the ${policy.max_pct_balance}% cap`,
+    });
+  }
+  if (
+    policy.min_runway_days_after !== undefined &&
+    after !== null &&
+    after < policy.min_runway_days_after
+  ) {
+    breaches.push({
+      code: "MIN_RUNWAY_AFTER",
+      detail: `runway would fall to ${after}d, under the ${policy.min_runway_days_after}d floor`,
+    });
+  }
+
+  // Soft signals: worth surfacing, not grounds for denial on their own.
+  if (breaches.length === 0) {
+    if (pctBalance !== null && pctBalance >= 50) {
+      reasons.push(`spend is ${pctBalance}% of the ${token} balance`);
+    }
+    if (after !== null && after < 14) {
+      reasons.push(`runway would fall to ${after} days`);
+    }
+    if (balance === 0n) {
+      reasons.push(`no ${token} balance is indexed for this wallet yet`);
+    }
+  }
+
+  const decision: SpendPreflight["decision"] =
+    breaches.length > 0 ? "deny" : reasons.length > 0 ? "warn" : "allow";
+  if (decision === "allow") {
+    reasons.push(
+      pctBalance === null
+        ? "spend is within policy"
+        : `spend is ${pctBalance}% of the ${token} balance and within policy`,
+    );
+  }
+  for (const b of breaches) reasons.push(b.detail);
+
+  return {
+    decision,
+    amount: { token, amount: amount.toString(), decimals },
+    balance_before: { token, amount: balance.toString(), decimals },
+    balance_after: { token, amount: balanceAfter.toString(), decimals },
+    pct_of_balance: pctBalance,
+    avg_daily_outflow_7d: { token, amount: avgDailyOutflow.toString(), decimals },
+    runway_days_before: before,
+    runway_after_days: after,
+    pct_of_runway: pctBalance,
+    breaches,
+    reasons,
+    as_of: asOf.toISOString(),
+  };
 }

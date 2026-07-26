@@ -323,3 +323,59 @@ describe("get_runway", () => {
     expect(res.runway_days).toBeNull();
   });
 });
+
+describe("spend_preflight", () => {
+  async function registered() {
+    const { ledger, handlers } = makeHandlers();
+    const w = await ledger.registerWallet(OWNER.address, 196, 0);
+    return { ledger, handlers, walletId: w.id };
+  }
+
+  it("is gated behind payment like any other paid tool", async () => {
+    const { handlers, walletId } = await registered();
+    const res = (await handlers.spend_preflight({ wallet_id: walletId, amount: "100000" })) as {
+      error?: { code?: string };
+    };
+    expect(res.error?.code).toBe("PAYMENT_REQUIRED");
+  });
+
+  it("rejects a malformed amount", async () => {
+    const { handlers, walletId } = await registered();
+    for (const amount of ["-5", "abc", "1.5", ""]) {
+      const res = (await handlers.spend_preflight({ wallet_id: walletId, amount }, PAID)) as {
+        error?: { code?: string };
+      };
+      expect(res.error?.code, `amount ${amount}`).toBe("BAD_REQUEST");
+    }
+  });
+
+  it("reports an unknown wallet", async () => {
+    const { handlers } = await registered();
+    const res = (await handlers.spend_preflight(
+      { wallet_id: "w_nope", amount: "100000" },
+      PAID,
+    )) as { error?: { code?: string } };
+    expect(res.error?.code).toBe("WALLET_NOT_FOUND");
+  });
+
+  it("returns an advisory decision with reasons for a registered wallet", async () => {
+    const { handlers, walletId } = await registered();
+    const res = (await handlers.spend_preflight(
+      { wallet_id: walletId, amount: "100000" },
+      PAID,
+    )) as { decision?: string; reasons?: string[]; balance_before?: unknown };
+    expect(["allow", "warn", "deny"]).toContain(res.decision);
+    expect(res.reasons?.length).toBeGreaterThan(0);
+    expect(res.balance_before).toBeDefined();
+  });
+
+  it("honours an explicit policy cap", async () => {
+    const { handlers, walletId } = await registered();
+    const res = (await handlers.spend_preflight(
+      { wallet_id: walletId, amount: "100000", policy: { max_single_spend: "1" } },
+      PAID,
+    )) as { decision?: string; breaches?: Array<{ code: string }> };
+    expect(res.decision).toBe("deny");
+    expect(res.breaches?.map((b) => b.code)).toContain("MAX_SINGLE_SPEND");
+  });
+});

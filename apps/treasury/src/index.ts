@@ -90,6 +90,7 @@ const PAID_SERVICE_ROUTES = [
   ["revenue-report", "get_revenue_report"],
   ["expense-report", "get_expense_report"],
   ["export-statement", "export_statement"],
+  ["spend-preflight", "spend_preflight"],
 ] as const;
 
 async function main(): Promise<void> {

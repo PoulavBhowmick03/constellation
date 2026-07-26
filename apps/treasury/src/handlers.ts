@@ -2,8 +2,10 @@ import {
   computeExpenseReport,
   computeRevenueReport,
   computeRunway,
+  computeSpendPreflight,
   exportStatement,
   type Period,
+  type SpendPolicy,
   type StatementFormat,
 } from "@constellation/indexer";
 import type { PaymentContext } from "@constellation/payment-adapter";
@@ -226,6 +228,52 @@ export function createHandlers(deps: TreasuryDeps) {
         ledger.getGas(wallet.id),
       ]);
       return exportStatement(transfers, gas, args.period ?? {}, args.format);
+    },
+
+    /**
+     * Paid, 0.05 USDT. Advisory spend check for an agent about to buy something.
+     *
+     * Read-only and non-custodial by construction: it moves no funds, holds no
+     * key, and authorises nothing. A `deny` is a recommendation the caller is
+     * free to ignore — the guardrail belongs to the spending agent, not to us.
+     */
+    async spend_preflight(
+      args: {
+        wallet_id: string;
+        amount: string;
+        token?: string;
+        counterparty?: string;
+        policy?: SpendPolicy;
+      },
+      ctx: PaymentContext = {},
+    ) {
+      const denied = await gate("spend_preflight", ctx);
+      if (denied) return denied;
+      if (typeof args.amount !== "string" || !/^\d+$/.test(args.amount)) {
+        return {
+          error: {
+            code: "BAD_REQUEST",
+            message: "amount must be an unsigned base-unit integer string",
+          },
+        } satisfies ToolError;
+      }
+      const wallet = await loadWallet(args.wallet_id);
+      if (!wallet) {
+        return {
+          error: { code: "WALLET_NOT_FOUND", message: `unknown wallet_id "${args.wallet_id}"` },
+        } satisfies ToolError;
+      }
+      const transfers = await ledger.getTransfers(wallet.id);
+      return computeSpendPreflight(
+        transfers,
+        {
+          amount: args.amount,
+          ...(args.token ? { token: args.token } : {}),
+          ...(args.counterparty ? { counterparty: args.counterparty } : {}),
+          ...(args.policy ? { policy: args.policy } : {}),
+        },
+        deps.now?.() ?? new Date(),
+      );
     },
   };
 }
