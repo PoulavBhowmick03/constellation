@@ -208,6 +208,17 @@ export function withReceiptStore(
   return async function paidRouteMiddleware(req, res, next) {
     const tool = toolByPath.get(req.path);
     const nonceKeyForRequest = tool ? readNonceKey(req, tool) : null;
+    if (process.env.DEBUG_RECEIPT_STORE === "1") {
+      console.warn(
+        "[payment-adapter][debug]",
+        JSON.stringify({
+          path: req.path,
+          tool: tool ?? null,
+          headerNames: Object.keys(req.headers ?? {}),
+          hasNonceKey: nonceKeyForRequest !== null,
+        }),
+      );
+    }
     try {
       if (tool) {
         const nonceKey = nonceKeyForRequest;
@@ -277,6 +288,12 @@ async function persistReceipt(
 ): Promise<void> {
   const raw = res.getHeader?.(X402_HEADERS.paymentResponse);
   const encoded = Array.isArray(raw) ? raw[0] : raw;
+  if (process.env.DEBUG_RECEIPT_STORE === "1") {
+    console.warn(
+      "[payment-adapter][debug] persistReceipt",
+      JSON.stringify({ nonceKey, hasEncodedHeader: typeof encoded === "string" && encoded.length > 0 }),
+    );
+  }
   if (typeof encoded !== "string" || encoded.length === 0) return;
   const receipt = JSON.parse(Buffer.from(encoded, "base64").toString("utf-8")) as {
     transaction?: unknown;
