@@ -1,3 +1,4 @@
+import { AsyncLocalStorage } from "node:async_hooks";
 import { OKXFacilitatorClient } from "@okxweb3/x402-core";
 import {
   paymentMiddlewareFromHTTPServer,
@@ -9,6 +10,12 @@ import type { OkxCredentials, SettlementStore } from "./sdk.js";
 import { TREASURY_X402 } from "./sdk.js";
 import type { Money } from "./types.js";
 import { bazaarExtensions, decodePaymentPayload, X402_HEADERS, type ToolDescriptor } from "./x402.js";
+
+/** Just enough of the SDK's SettleResponse to persist a receipt. */
+interface CapturedSettleResult {
+  transaction?: string;
+  payer?: string;
+}
 
 /**
  * Minimal structural Express handler type.
@@ -119,6 +126,32 @@ export function createPaidRouteMiddleware(config: PaidRouteMiddlewareConfig): Mi
     new ExactEvmScheme(),
   );
 
+  /**
+   * Capture the settlement result directly from the SDK instead of reading it
+   * back off `res` after the fact.
+   *
+   * Discovered live: the PAYMENT-RESPONSE header is not yet set on `res` at the
+   * point the middleware calls `next()` — it gets attached later, downstream,
+   * closer to when the response body is actually written. Reading it inside our
+   * `next` callback (the previous approach) reliably found nothing against the
+   * real SDK, even though the header does end up in the response the client
+   * receives. `onAfterSettle` hands back the settlement result as data, so
+   * there is nothing to race.
+   *
+   * AsyncLocalStorage correlates the hook firing (registered once, globally,
+   * on `resourceServer`) back to the ONE in-flight request that triggered it:
+   * `withReceiptStore` runs `inner()` inside `als.run()`, so a hook invoked
+   * anywhere in that call's async chain sees the same store.
+   */
+  const settleResultAls = new AsyncLocalStorage<CapturedSettleResult>();
+  resourceServer.onAfterSettle(async (context) => {
+    const store = settleResultAls.getStore();
+    if (!store) return;
+    const result = context.result as { transaction?: string; payer?: string } | undefined;
+    if (typeof result?.transaction === "string") store.transaction = result.transaction;
+    if (typeof result?.payer === "string") store.payer = result.payer;
+  });
+
   const byPattern: Record<string, unknown> = {};
   const toolByPath = new Map<string, string>();
   for (const route of config.routes) {
@@ -166,7 +199,7 @@ export function createPaidRouteMiddleware(config: PaidRouteMiddlewareConfig): Mi
   const inner = paymentMiddlewareFromHTTPServer(httpServer) as unknown as MiddlewareHandler;
   const store = config.settlementStore;
   if (!store) return inner;
-  return withReceiptStore(inner, store, toolByPath);
+  return withReceiptStore(inner, store, toolByPath, settleResultAls);
 }
 
 /**
@@ -180,6 +213,12 @@ export function withReceiptStore(
   inner: MiddlewareHandler,
   store: SettlementStore,
   toolByPath: Map<string, string>,
+  /**
+   * Correlates `inner`'s call to the `onAfterSettle` hook fired somewhere
+   * inside it. Omitted in tests, where a stub `inner` has no hook to fire —
+   * `persistReceipt`'s header read is the fallback for that case.
+   */
+  settleResultAls?: AsyncLocalStorage<CapturedSettleResult>,
 ): MiddlewareHandler {
 
   /**
@@ -208,17 +247,6 @@ export function withReceiptStore(
   return async function paidRouteMiddleware(req, res, next) {
     const tool = toolByPath.get(req.path);
     const nonceKeyForRequest = tool ? readNonceKey(req, tool) : null;
-    if (process.env.DEBUG_RECEIPT_STORE === "1") {
-      console.warn(
-        "[payment-adapter][debug]",
-        JSON.stringify({
-          path: req.path,
-          tool: tool ?? null,
-          headerNames: Object.keys(req.headers ?? {}),
-          hasNonceKey: nonceKeyForRequest !== null,
-        }),
-      );
-    }
     try {
       if (tool) {
         const nonceKey = nonceKeyForRequest;
@@ -258,42 +286,56 @@ export function withReceiptStore(
 
     // The middleware calls next() ONLY on a confirmed-successful settlement
     // (including one recovered by its internal timeout polling). That makes
-    // this the correct place to persist the receipt: `onAfterSettle` fires
-    // before timeout recovery and would miss a late-confirmed payment.
-    return inner(req, res, (err?: unknown) => {
-      if (err !== undefined && err !== null) {
-        next(err);
-        return;
-      }
-      if (!nonceKeyForRequest) {
-        req.x402 = NO_SAVE;
-        next();
-        return;
-      }
-      req.x402 = saverFor(nonceKeyForRequest);
-      void persistReceipt(store, nonceKeyForRequest, res)
-        .catch((e: unknown) =>
-          console.warn("[payment-adapter] receipt persist failed:", (e as Error).message),
-        )
-        .finally(() => next());
-    });
+    // this the correct place to persist the receipt.
+    const captured: CapturedSettleResult = {};
+    const runInner = () =>
+      inner(req, res, (err?: unknown) => {
+        if (err !== undefined && err !== null) {
+          next(err);
+          return;
+        }
+        if (!nonceKeyForRequest) {
+          req.x402 = NO_SAVE;
+          next();
+          return;
+        }
+        req.x402 = saverFor(nonceKeyForRequest);
+        void persistReceipt(store, nonceKeyForRequest, res, captured)
+          .catch((e: unknown) =>
+            console.warn("[payment-adapter] receipt persist failed:", (e as Error).message),
+          )
+          .finally(() => next());
+      });
+    return settleResultAls ? settleResultAls.run(captured, runInner) : runInner();
   };
 }
 
-/** Record a confirmed settlement so a later replay re-delivers without charging. */
+/**
+ * Record a confirmed settlement so a later replay re-delivers without charging.
+ *
+ * Prefers `captured` (populated by the SDK's `onAfterSettle` hook via
+ * AsyncLocalStorage) over reading the PAYMENT-RESPONSE response header: the
+ * header is not reliably present on `res` yet at this point in the request
+ * lifecycle — verified against the real SDK, where reading it here found
+ * nothing even on a confirmed, on-chain-settled payment. The header read
+ * remains as a fallback for callers (tests) that don't wire the hook.
+ */
 async function persistReceipt(
   store: SettlementStore,
   nonceKey: string,
   res: ExpressLikeResponse,
+  captured?: CapturedSettleResult,
 ): Promise<void> {
+  if (captured?.transaction) {
+    await store.update(nonceKey, {
+      status: "settled",
+      transaction: captured.transaction,
+      ...(captured.payer ? { payer: captured.payer } : {}),
+    });
+    return;
+  }
   const raw = res.getHeader?.(X402_HEADERS.paymentResponse);
   const encoded = Array.isArray(raw) ? raw[0] : raw;
-  if (process.env.DEBUG_RECEIPT_STORE === "1") {
-    console.warn(
-      "[payment-adapter][debug] persistReceipt",
-      JSON.stringify({ nonceKey, hasEncodedHeader: typeof encoded === "string" && encoded.length > 0 }),
-    );
-  }
   if (typeof encoded !== "string" || encoded.length === 0) return;
   const receipt = JSON.parse(Buffer.from(encoded, "base64").toString("utf-8")) as {
     transaction?: unknown;
