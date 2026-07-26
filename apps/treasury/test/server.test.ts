@@ -481,4 +481,22 @@ describe("SDK paid-route mount (production shape)", () => {
     await res.text();
     expect(ledger.wallets.size).toBe(before);
   });
+
+  // Found live: a real external payment (0.2 USDT₮0, real X Layer tx) settled
+  // against export_statement replayed as a paid GET — reusing the verb from
+  // its own unpaid 402 probe — and only THEN failed with "format required",
+  // after the buyer had already been charged. Routes are verb-less so the SDK
+  // settles regardless of method; precheck must reject before it, not after.
+  it("rejects a paid GET before reaching payment, not after", async () => {
+    grant = true;
+    const res = await fetch(`${base}/services/export-statement?format=csv`, {
+      method: "GET",
+      headers: { ...payerHeader() },
+    });
+    expect(res.status).toBe(400);
+    expect(middlewareCalls).toBe(0);
+    const body = (await res.json()) as { error: { code: string; message: string } };
+    expect(body.error.code).toBe("BAD_REQUEST");
+    expect(body.error.message).toMatch(/POST/);
+  });
 });

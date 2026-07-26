@@ -489,8 +489,32 @@ export function createApp(deps: TreasuryDeps): express.Express {
 
     app.all(paths, async (req: Request, res: Response, next: express.NextFunction) => {
       try {
-        if (req.method !== "POST" || !hasPaymentHeader(req)) {
+        // Gate on the payment header alone, not on method. Routes are
+        // registered verb-less so the SDK settles a payment attached to ANY
+        // HTTP method (GET included — a client that reuses the verb it used
+        // to probe the 402 will replay with the same one). Excluding non-POST
+        // here let exactly that kind of paid request skip precheck entirely
+        // and reach real settlement unvalidated — a buyer paid, the export
+        // handler then rejected the call for a missing `format`, and the
+        // charge had already gone through. Found live, on a real external
+        // payment (0.2 USDT₮0, tx 0x2b0a7eed...).
+        if (!hasPaymentHeader(req)) {
           next();
+          return;
+        }
+        // A paid replay carrying a non-POST verb (most likely a client that
+        // reused the method from its unpaid probe) has nowhere reliable to
+        // put JSON body args. Reject with a precise reason before the SDK
+        // ever sees it, rather than let a tool without required args settle
+        // silently or a tool with them (export_statement's format,
+        // spend_preflight's amount) fail confusingly after being charged.
+        if (req.method !== "POST") {
+          res.status(400).json({
+            error: {
+              code: "BAD_REQUEST",
+              message: `replay this paid call as POST with a JSON body, not ${req.method}`,
+            },
+          });
           return;
         }
         const tool = toolByPath.get(req.path)!;
