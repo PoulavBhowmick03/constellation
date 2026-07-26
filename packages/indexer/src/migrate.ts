@@ -1,16 +1,26 @@
 import "dotenv/config";
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { closePool, getPool } from "./db.js";
 
-// Applies every migration in migrations/ in filename order. Idempotent: each
-// migration uses IF NOT EXISTS, and applied names are tracked in a table.
-const MIGRATIONS = ["001_init.sql", "002_payment_receipts.sql"];
-
+/**
+ * Applies every `NNN_*.sql` file in migrations/ in filename order. Idempotent:
+ * each migration should use IF NOT EXISTS / IF EXISTS, and applied names are
+ * tracked in `_migrations` so a rerun is a no-op.
+ *
+ * Previously this list was hand-maintained and silently drifted from the
+ * directory — 003_receipt_results.sql shipped in the repo and in the deployed
+ * image but was never in the array, so `fly deploy`'s release_command reported
+ * success while quietly applying nothing. Scanning the directory makes "add a
+ * migration file" and "it gets applied" the same action.
+ */
 async function main(): Promise<void> {
   const here = dirname(fileURLToPath(import.meta.url));
   const migrationsDir = join(here, "..", "migrations");
+  const migrations = readdirSync(migrationsDir)
+    .filter((f) => /^\d+.*\.sql$/.test(f))
+    .sort();
   const pool = getPool();
 
   await pool.query(`
@@ -20,7 +30,7 @@ async function main(): Promise<void> {
     )
   `);
 
-  for (const name of MIGRATIONS) {
+  for (const name of migrations) {
     const already = await pool.query("SELECT 1 FROM _migrations WHERE name = $1", [name]);
     if (already.rowCount && already.rowCount > 0) {
       console.log(`skip ${name} (already applied)`);
