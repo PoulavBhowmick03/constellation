@@ -175,3 +175,43 @@ describe("computeSpendPreflight — decisions", () => {
     }
   });
 });
+
+describe("computeSpendPreflight — incomplete indexing", () => {
+  // Outflows indexed but not the inflows that funded them: a real wallet cannot
+  // be negative, so every balance-derived judgement here is untrustworthy.
+  const partiallyIndexed = [tx("out", "1000000", 2), tx("out", "500000", 3)];
+
+  it("does not claim INSUFFICIENT_BALANCE against a negative balance", () => {
+    const r = computeSpendPreflight(partiallyIndexed, { amount: "100000" }, NOW);
+    expect(BigInt(r.balance_before.amount)).toBeLessThan(0n);
+    expect(r.breaches.map((b) => b.code)).not.toContain("INSUFFICIENT_BALANCE");
+  });
+
+  it("warns rather than denying, and says why", () => {
+    const r = computeSpendPreflight(partiallyIndexed, { amount: "100000" }, NOW);
+    expect(r.decision).toBe("warn");
+    expect(r.reasons.join(" ")).toMatch(/not fully indexed/);
+  });
+
+  it("suppresses balance-derived policy caps it cannot evaluate", () => {
+    const r = computeSpendPreflight(
+      partiallyIndexed,
+      { amount: "100000", policy: { max_pct_balance: 1, min_runway_days_after: 999 } },
+      NOW,
+    );
+    const codes = r.breaches.map((b) => b.code);
+    expect(codes).not.toContain("MAX_PCT_BALANCE");
+    expect(codes).not.toContain("MIN_RUNWAY_AFTER");
+  });
+
+  it("still enforces amount-only caps, which do not depend on balance", () => {
+    const r = computeSpendPreflight(
+      partiallyIndexed,
+      { amount: "100000", policy: { max_single_spend: "1" } },
+      NOW,
+    );
+    expect(r.decision).toBe("deny");
+    expect(r.breaches.map((b) => b.code)).toContain("MAX_SINGLE_SPEND");
+  });
+})
+;

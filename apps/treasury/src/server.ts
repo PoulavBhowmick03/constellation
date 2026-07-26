@@ -580,7 +580,7 @@ export function createApp(deps: TreasuryDeps): express.Express {
     res.json({
       status: "ok",
       service: "treasury-copilot",
-      tools: 5,
+      tools: 6,
       services: [
         "/services/register-wallet",
         "/services/runway",

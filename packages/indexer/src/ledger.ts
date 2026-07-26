@@ -317,7 +317,18 @@ export function computeSpendPreflight(
   if (amount <= 0n) {
     breaches.push({ code: "INVALID_AMOUNT", detail: "spend amount must be positive" });
   }
-  if (balanceAfter < 0n) {
+
+  // A wallet cannot actually hold a negative balance. Seeing one means the
+  // indexer has recorded outflows but not yet all inflows — normal for a
+  // freshly registered wallet mid-backfill. Every balance-derived judgement is
+  // unreliable in that state, so say so plainly rather than emitting a
+  // confident but wrong INSUFFICIENT_BALANCE against a nonsense number.
+  const indexingIncomplete = balance < 0n;
+  if (indexingIncomplete) {
+    reasons.push(
+      `${token} balance is not fully indexed for this wallet yet, so balance and runway checks are inconclusive`,
+    );
+  } else if (balanceAfter < 0n) {
     breaches.push({
       code: "INSUFFICIENT_BALANCE",
       detail: `spend of ${input.amount} exceeds the ${token} balance of ${balance.toString()}`,
@@ -329,13 +340,19 @@ export function computeSpendPreflight(
       detail: `spend exceeds the per-transaction cap of ${policy.max_single_spend}`,
     });
   }
-  if (policy.max_pct_balance !== undefined && pctBalance !== null && pctBalance > policy.max_pct_balance) {
+  if (
+    !indexingIncomplete &&
+    policy.max_pct_balance !== undefined &&
+    pctBalance !== null &&
+    pctBalance > policy.max_pct_balance
+  ) {
     breaches.push({
       code: "MAX_PCT_BALANCE",
       detail: `spend is ${pctBalance}% of balance, over the ${policy.max_pct_balance}% cap`,
     });
   }
   if (
+    !indexingIncomplete &&
     policy.min_runway_days_after !== undefined &&
     after !== null &&
     after < policy.min_runway_days_after
@@ -347,7 +364,7 @@ export function computeSpendPreflight(
   }
 
   // Soft signals: worth surfacing, not grounds for denial on their own.
-  if (breaches.length === 0) {
+  if (breaches.length === 0 && !indexingIncomplete) {
     if (pctBalance !== null && pctBalance >= 50) {
       reasons.push(`spend is ${pctBalance}% of the ${token} balance`);
     }
