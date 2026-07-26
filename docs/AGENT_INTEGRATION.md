@@ -1,78 +1,82 @@
 # Can The Firm call Treasury Copilot?
 
-Short answer: **architecturally yes, today no** — The Firm isn't built (`apps/firm` is an
-empty uv project; INTERFACES.md §3 marks it `STATUS: DEFERRED`). This is what the wiring
-looks like once it is, and what's already proven working in its place.
+Correction to an earlier version of this doc: it claimed The Firm was unbuilt, based only
+on this monorepo's own `apps/firm` (an empty stub — INTERFACES.md §3 does mark it
+`STATUS: DEFERRED` here). That's true of *this repo's* copy. The real Firm is a separate,
+live project at `~/Developer/firm` — a different repo entirely, not a subdirectory of this
+one — and it's substantially built: deployed gateway, a working LangGraph pipeline, and a
+**real, generic, working buyer-side x402 client already paying a real third-party agent.**
 
-## The frozen contract point
+## What's actually proven, in the real Firm repo
 
-INTERFACES.md §3's `ProvenanceAppendix` — attached to every deliverable The Firm
-produces — has a field for exactly this:
+`packages/procurer` (TypeScript) is a genuine x402 buyer implementation — parses a 402
+challenge, selects an offer, assembles a signed EIP-3009 payment header, same protocol
+Treasury's paid tools speak. It is not a mock and not OKLink-specific: `parseChallenge`,
+`selectOffer`, `assembleV1PaymentHeader` operate on any x402 challenge from any resource.
 
-```json
-{
-  "...": "...",
-  "treasury_statement": "<export_statement md content>",
-  "totals": { "spent": {...}, "budget": {...} }
-}
+It's proven against a real third party today: The Firm's Express product buys a raw price
+series from **OKLink (Agent #2023)** for 15 base units over x402, live, on real money —
+the README documents a specific settled call (`t_c6aaf880…`, ~12s). Idempotency under
+retry is enforced on-chain via a derived EIP-3009 nonce. Refunds fire automatically on
+failure, on real money, per the README.
+
+So the premise of the original version of this doc — "nothing can send an x402 payment
+programmatically yet" — was wrong. Something does, and it works.
+
+## What's specifically true of the Treasury link
+
+This is the part that's still accurate to flag. `apps/firm/src/firm/graph.py` has a
+scaffolded but **not wired** call to Treasury:
+
+```python
+# config.py
+enable_treasury_books: bool = False
+treasury_books_url: str | None = Field(default=None)
+
+# graph.py — build_provenance()
+books_enabled = get_settings().enable_treasury_books
+books_cost = Money.usdt(50_000) if books_enabled else Money.usdt(0)
+...
+tx="SIMULATED:treasury-books" if not books_enabled else "PENDING",
+statement=(
+    "Books by our own Treasury Copilot, disclosed as an intra-team payment."
+    if books_enabled else
+    "SIMULATED: no Treasury call was made and NO COST WAS INCURRED, so this "
+    "line is 0 and the margin above reflects what The Firm actually retained."
+),
 ```
 
-The Firm's `assemble` node (the last stop in its `plan -> source -> diligence -> procure
--> qa -> assemble` graph) calls Treasury's paid `export_statement` tool, gets back a
-markdown statement of the task's spend, and embeds it verbatim. That's the one specific,
-frozen integration point — not a vague "they could talk to each other," a named field
-with a named source.
+Read this precisely, because the code is more honest than a casual read suggests:
+- The flag defaults **off**. In that state the books line is genuinely zero cost — not
+  hidden, stated as simulated in the provenance receipt itself.
+- Flip it on and the cost accrues (0.05 USDT — the same price point as Treasury's
+  `spend_preflight`) but the transaction is hardcoded to the **string** `"PENDING"`, not
+  a real hash. `treasury_books_url` is defined and read into settings but never used to
+  make an HTTP call anywhere in `graph.py`. Turning the flag on today would silently
+  book a cost that was never actually paid — worth not doing until the call is wired.
 
-## What calling Treasury actually requires
-
-Treasury's paid tools are gated by x402: a caller sends a request, gets an HTTP 402 with
-a signed challenge (network, price, payTo, asset), and must reply with a
-`PAYMENT-SIGNATURE` header carrying a signed EIP-3009 `transferWithAuthorization` for
-that exact challenge. Nothing custodial — the caller signs, OKX's facilitator verifies
-and settles, funds move payer to treasury directly. Any agent with three things can call
-it: a funded wallet, a private key, and code that can construct that signature.
-
-That last part is the actual blocker for The Firm as specified. The Firm is Python
-(LangGraph); OKX's Payment SDK is TypeScript-only. The I1 brief anticipated this
-explicitly: *"if the human reports the A2A side of the Payment SDK is TypeScript-only, do
-not rewrite in TS. Design the thin TS gateway boundary, write its spec into your status
-file, and wait for human confirmation before building it."* That gateway is not built
-either — `payAndCall` (the outbound half of `packages/payment-adapter`'s interface,
-meant for exactly this) is implemented for the mock adapter only. In SDK mode it's a
-stub:
-
-```ts
-// packages/payment-adapter/src/sdk.ts
-async payAndCall<T>(...): Promise<PayAndCallResult<T>> {
-  return { ok: false, error: { code: "NOT_IMPLEMENTED",
-    message: "SDK mode implements inbound settlement only" } };
-}
-```
-
-Treasury can **receive** real x402 payments today. Nothing in this repo can **send** one
-programmatically yet.
-
-## What's proven instead
-
-Every real payment made against Treasury this session — the ones behind the exactly-once
-delivery fixes and the settlement hashes in TRUST.md — was made the same way an
-eventual Firm gateway would: probe the 402, sign an EIP-3009 authorization, replay with
-the header, get the result. The tool that did the signing was OKX's own `onchainos` CLI
-(`payment quote` → `payment pay`), driven by an agent (this session) reading the
-challenge and deciding what to do with it.
-
-That's not a simulation of agent-to-agent commerce — the same protocol, the same
-facilitator, the same on-chain settlement The Firm would use, just with a human-directed
-agent standing in for The Firm's not-yet-built payer node. It's the honest, currently-true
-version of "an agent pays Treasury Copilot": real, on-chain, verifiable — just not
-autonomous end-to-end yet.
+This is the same gap the original doc found, just narrower than originally stated: the
+*general capability* to pay an x402 endpoint is built and proven (against OKLink). The
+specific wire-up to Treasury Copilot's endpoint is the missing piece, not the payer
+machinery itself.
 
 ## To make it real
 
-1. Build the thin TS gateway: an HTTP endpoint that takes `(url, tool, args, budgetCap)`,
-   does the quote/sign/settle cycle against a wallet it holds, and returns the result —
-   i.e., implement `payAndCall` for real in SDK mode.
-2. The Firm's `assemble` node calls that gateway instead of shelling out to a CLI.
-3. Nothing about Treasury's side needs to change — it already can't tell the difference
-   between a human-directed CLI call and a fully autonomous one. The x402 challenge
-   doesn't know who's on the other end of the signature.
+Given `packages/procurer` already does the hard part generically:
+
+1. Point `treasury_books_url` at a real Treasury endpoint (`https://constellationokx.fly.dev/services/spend-preflight`
+   or whichever tool is the right semantic fit for "books this job's spend" — worth a
+   real decision, not a placeholder guess; `export_statement` is the one actually named
+   in Treasury's own INTERFACES.md contract for this purpose).
+2. In `build_provenance()` (or wherever the books step actually executes — this function
+   only builds the receipt, the call itself needs a home), call `packages/procurer`'s
+   existing quote → sign → settle flow against that URL, the same way the OKLink call
+   already does.
+3. Replace the hardcoded `"PENDING"` with the real settlement hash/receipt the procurer
+   call returns.
+4. Leave `enable_treasury_books` defaulting off until that's done — the current honesty
+   about "simulated, zero cost" is the right behavior for an unwired call, not a bug to
+   route around.
+
+This is materially smaller than "build an x402 payer from scratch" — it's "point an
+already-working payer at one more endpoint and stop hardcoding the receipt."
