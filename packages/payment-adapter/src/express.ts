@@ -146,8 +146,19 @@ export function createPaidRouteMiddleware(config: PaidRouteMiddlewareConfig): Mi
   const settleResultAls = new AsyncLocalStorage<CapturedSettleResult>();
   resourceServer.onAfterSettle(async (context) => {
     const store = settleResultAls.getStore();
+    const result = context.result as { transaction?: string; payer?: string; status?: string } | undefined;
+    if (process.env.DEBUG_RECEIPT_STORE === "1") {
+      console.warn(
+        "[payment-adapter][debug] onAfterSettle fired",
+        JSON.stringify({
+          hasAlsStore: !!store,
+          resultKeys: result ? Object.keys(result) : null,
+          status: result?.status ?? null,
+          hasTransaction: typeof result?.transaction === "string",
+        }),
+      );
+    }
     if (!store) return;
-    const result = context.result as { transaction?: string; payer?: string } | undefined;
     if (typeof result?.transaction === "string") store.transaction = result.transaction;
     if (typeof result?.payer === "string") store.payer = result.payer;
   });
@@ -300,6 +311,9 @@ export function withReceiptStore(
           return;
         }
         req.x402 = saverFor(nonceKeyForRequest);
+        if (process.env.DEBUG_RECEIPT_STORE === "1") {
+          console.warn("[payment-adapter][debug] wrapped-next reading captured", JSON.stringify(captured));
+        }
         void persistReceipt(store, nonceKeyForRequest, res, captured)
           .catch((e: unknown) =>
             console.warn("[payment-adapter] receipt persist failed:", (e as Error).message),
